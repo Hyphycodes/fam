@@ -6,23 +6,21 @@ import {
   MusicManager,
   UploadLinkManager,
 } from '@/components/FamilyManager'
-import { requireSession } from '@/lib/auth'
+import { requireViewer } from '@/lib/viewer'
 import { appName, appUrl, isConfigured } from '@/lib/env'
 import { getEvents, getInvites, getMusicTracks, getUploadLinks } from '@/lib/queries'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createClient } from '@/lib/supabase/server'
+import { readDb } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
 export default async function SettingsPage() {
   if (!isConfigured('supabase')) redirect('/setup')
 
-  const session = await requireSession()
-  const db = await createClient()
-  const isOwner = session.profile.role === 'owner'
+  const viewer = await requireViewer()
+  const db = readDb()
+  const isOwner = viewer.role === 'owner'
 
-  // The guest list and drop-off links live behind the service role; everything
-  // else reads through the session so RLS still applies.
   const admin = isOwner ? createAdminClient() : null
 
   const [events, tracks, invites, links] = await Promise.all([
@@ -33,13 +31,13 @@ export default async function SettingsPage() {
   ])
 
   return (
-    <Shell session={session}>
+    <Shell viewer={viewer}>
       <header className="mt-8 mb-10 max-w-3xl sm:mt-14 sm:mb-14">
         <p className="eyebrow">Keep the archive growing</p>
-        <h1 className="mt-4 font-display text-[clamp(3.5rem,9vw,6.5rem)] leading-[0.88] tracking-[-0.035em] text-balance">
-          {isOwner ? 'The family room' : session.profile.display_name}
+        <h1 className="mt-3 text-[clamp(2.5rem,8vw,4.25rem)] font-semibold leading-[0.95] tracking-[-0.035em] text-balance">
+          {isOwner ? 'The family room' : viewer.display_name}
         </h1>
-        <p className="mt-6 max-w-xl leading-relaxed text-paper-dim">
+        <p className="mt-5 max-w-xl leading-relaxed text-paper-dim">
           {isOwner
             ? 'Invite the people who belong here, shape memories into chapters, and choose how the archive sounds when it becomes a film.'
             : 'The shared events, soundtrack, and account details behind your family archive.'}
@@ -74,11 +72,14 @@ export default async function SettingsPage() {
 
         <section id="account" className="settings-panel scroll-mt-28">
           <p className="eyebrow mb-3">Account</p>
-          <h2 className="font-display text-title">Your seat in the archive</h2>
+          <h2 className="text-2xl font-semibold tracking-[-0.02em]">Your seat in the archive</h2>
           <p className="mt-3 break-words text-paper-dim">
-            Signed in as {session.email}
+            Signed in as {viewer.display_name}
           </p>
-          <form action="/api/auth/signout" method="post">
+          <form
+            action={viewer.kind === 'member' ? '/api/community/leave' : '/api/auth/signout'}
+            method="post"
+          >
             <button type="submit" className="btn btn-ghost mt-8">
               Sign out of {appName}
             </button>

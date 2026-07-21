@@ -1,7 +1,7 @@
 import { fail, handleError, ok } from '@/lib/api'
-import { getSession } from '@/lib/auth'
+import { getViewer } from '@/lib/viewer'
 import { getFeed } from '@/lib/queries'
-import { createClient } from '@/lib/supabase/server'
+import { readDb } from '@/lib/db'
 
 /**
  * The reel for Movie Mode.
@@ -12,10 +12,10 @@ import { createClient } from '@/lib/supabase/server'
  */
 export async function GET(request: Request) {
   try {
-    if (!(await getSession())) return fail('Not signed in.', 401)
+    if (!(await getViewer())) return fail('Not signed in.', 401)
 
     const url = new URL(request.url)
-    const db = await createClient()
+    const db = readDb()
 
     const media = await getFeed(db, {
       limit: 400,

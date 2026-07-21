@@ -4,7 +4,9 @@ import { CoverTile, MediaTile, PosterTile, Rail } from '@/components/Rail'
 import { Shell } from '@/components/Shell'
 import { VideoFrame } from '@/components/VideoFrame'
 import { AddMemoriesButton } from '@/components/AddMemories'
-import { requireSession } from '@/lib/auth'
+import { ActivityStrip } from '@/components/ActivityStrip'
+import { getRecentActivity } from '@/lib/community/activity'
+import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
 import {
   getBrowseCovers,
@@ -16,8 +18,8 @@ import {
   getYears,
 } from '@/lib/queries'
 import { reconcileProcessingVideos } from '@/lib/reconcile'
-import { createClient } from '@/lib/supabase/server'
-import { dailyIndex, fullDate, isRecent, season, yearsAgo } from '@/lib/format'
+import { readDb } from '@/lib/db'
+import { dailyIndex, fullDate, season, yearsAgo } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -25,14 +27,14 @@ export const dynamic = 'force-dynamic'
 export default async function HomePage() {
   if (!isConfigured('supabase')) redirect('/setup')
 
-  const session = await requireSession()
-  const db = await createClient()
+  const viewer = await requireViewer()
+  const db = readDb()
 
   // Catch any video whose uploader closed the tab before Cloudflare finished —
   // without this, a transcoded video could sit invisible forever.
   await reconcileProcessingVideos()
 
-  const [recent, newThisWeek, onThisDay, favorites, people, events, years] =
+  const [recent, newThisWeek, onThisDay, favorites, people, events, years, activity] =
     await Promise.all([
       getFeed(db, { limit: 18 }),
       getNewThisWeek(db),
@@ -41,6 +43,7 @@ export default async function HomePage() {
       getPeople(db),
       getEvents(db),
       getYears(db),
+      getRecentActivity(db, 10),
     ])
   const covers = await getBrowseCovers(db, { people, events, years })
 
@@ -51,23 +54,16 @@ export default async function HomePage() {
   )
   const hero = heroPool.length > 0 ? heroPool[dailyIndex(heroPool.length)] : null
 
-  const justArrived = isRecent(session.profile.created_at, 15 * 60 * 1000)
-
   return (
-    <Shell session={session} immersive={Boolean(hero)}>
+    <Shell viewer={viewer} immersive={Boolean(hero)}>
       {hero && <Billboard media={hero} />}
 
-      {justArrived && recent.length > 0 && (
-        <p className="mx-auto mt-8 max-w-xl text-center text-[0.9375rem] leading-relaxed text-paper-dim">
-          Welcome, {session.profile.display_name}. Everything here is ours — scroll it,
-          open anything, add your own with the plus below.
-        </p>
-      )}
-
       {recent.length === 0 ? (
-        <FirstTime name={session.profile.display_name} />
+        <FirstTime name={viewer.display_name} />
       ) : (
         <div className="mt-10 flex flex-col gap-9 sm:mt-12 sm:gap-11">
+          {activity.length > 0 && <ActivityStrip items={activity} />}
+
           {newThisWeek.length > 0 && (
             <Rail title="New this week">
               {newThisWeek.map((m) => (

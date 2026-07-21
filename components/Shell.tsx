@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { appName } from '@/lib/env'
-import type { Session } from '@/lib/auth'
+import type { Viewer } from '@/lib/types'
 import { Nav } from '@/components/Nav'
+import { Avatar } from '@/components/Avatar'
 
 /**
  * The room the app lives in.
@@ -11,11 +12,11 @@ import { Nav } from '@/components/Nav'
  * imagery (the home billboard) instead of taking up space above it.
  */
 export function Shell({
-  session,
+  viewer,
   immersive = false,
   children,
 }: {
-  session: Session
+  viewer: Viewer
   immersive?: boolean
   children: React.ReactNode
 }) {
@@ -34,16 +35,14 @@ export function Shell({
           {appName}
         </Link>
         <Link
-          href="/settings"
-          aria-label={`Open settings for ${session.profile.display_name}`}
+          href="/you"
+          aria-label={`You — ${viewer.display_name}`}
           className="flex min-h-11 min-w-11 max-w-[62%] items-center justify-end gap-2.5 rounded-full px-1.5 py-1.5 text-sm text-paper-dim transition-colors hover:text-paper"
         >
           <span className="hidden truncate text-[0.8125rem] sm:block">
-            {session.profile.display_name}
+            {viewer.display_name}
           </span>
-          <span className="grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-white/10 text-[0.8125rem] font-medium text-white backdrop-blur-sm">
-            {session.profile.display_name.charAt(0).toUpperCase()}
-          </span>
+          <Avatar name={viewer.display_name} src={viewer.avatar_url} size={32} />
         </Link>
       </header>
 
@@ -55,7 +54,7 @@ export function Shell({
         {children}
       </main>
 
-      <Nav isOwner={session.profile.role === 'owner'} />
+      <Nav />
     </div>
   )
 }

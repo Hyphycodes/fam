@@ -91,6 +91,14 @@ export const supabaseServiceKey = () => require_('SUPABASE_SERVICE_ROLE_KEY')
 
 export const ownerEmail = () => process.env.OWNER_EMAIL?.trim().toLowerCase() || null
 
+/**
+ * The one shared family passcode. Server-only — never inlined into the browser
+ * bundle. Absent means the passcode gate is closed and only legacy magic-link
+ * sign-in works, which is the safe default.
+ */
+export const familyPasscode = () => process.env.FAMILY_PASSCODE?.trim() || null
+export const hasFamilyPasscode = () => Boolean(familyPasscode())
+
 export const streamCustomerCode = () =>
   require_('NEXT_PUBLIC_CLOUDFLARE_STREAM_CUSTOMER_CODE')
 

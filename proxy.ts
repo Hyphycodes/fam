@@ -11,7 +11,7 @@ import { NextResponse, type NextRequest } from 'next/server'
  * without an account.
  */
 
-const PUBLIC_PREFIXES = ['/login', '/auth', '/add', '/setup', '/offline', '/manifest.webmanifest', '/sw.js']
+const PUBLIC_PREFIXES = ['/enter', '/login', '/auth', '/add', '/setup', '/offline', '/manifest.webmanifest', '/sw.js']
 
 function isPublic(pathname: string): boolean {
   /*
@@ -60,17 +60,23 @@ export async function proxy(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser())
   } catch {
-    // Supabase unreachable. Fall through to the login redirect rather than
+    // Supabase unreachable. Fall through to the entry redirect rather than
     // failing every request in the app with a 500.
   }
 
+  // A passcode member has no Supabase user, only our own session cookie. This is
+  // a cheap presence check; the real validation (is the token a live session?)
+  // happens at the page/route level in requireViewer(). A forged cookie only
+  // gets past the middleware to be turned away there.
+  const hasMemberCookie = Boolean(request.cookies.get('fam_session')?.value)
+
   const { pathname } = request.nextUrl
-  if (!user && !isPublic(pathname)) {
-    const loginUrl = request.nextUrl.clone()
-    loginUrl.pathname = '/login'
+  if (!user && !hasMemberCookie && !isPublic(pathname)) {
+    const enterUrl = request.nextUrl.clone()
+    enterUrl.pathname = '/enter'
     // Come back to where they were trying to go once they're in.
-    if (pathname !== '/') loginUrl.searchParams.set('next', pathname)
-    return NextResponse.redirect(loginUrl)
+    if (pathname !== '/') enterUrl.searchParams.set('next', pathname)
+    return NextResponse.redirect(enterUrl)
   }
 
   return response

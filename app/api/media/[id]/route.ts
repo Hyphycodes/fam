@@ -1,7 +1,7 @@
 import { fail, handleError, ok, readJson } from '@/lib/api'
-import { getSession } from '@/lib/auth'
+import { getActor } from '@/lib/community/actor'
 import { getMediaById } from '@/lib/queries'
-import { createClient } from '@/lib/supabase/server'
+import { readDb } from '@/lib/db'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { deleteVideo } from '@/lib/stream'
 
@@ -10,9 +10,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    if (!(await getSession())) return fail('Not signed in.', 401)
+    if (!(await getActor())) return fail('Not signed in.', 401)
     const { id } = await params
-    const media = await getMediaById(await createClient(), id)
+    const media = await getMediaById(readDb(), id)
     if (!media) return fail('That memory is not here.', 404)
     return ok({ media })
   } catch (error) {
@@ -34,12 +34,12 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const session = await getSession()
-    if (!session) return fail('Not signed in.', 401)
+    const actor = await getActor()
+    if (!actor) return fail('Not signed in.', 401)
 
     const { id } = await params
     const body = await readJson<Patch>(request)
-    const db = await createClient()
+    const db = actor.db
 
     const changes: Record<string, unknown> = {}
     if ('caption' in body) changes.caption = (body.caption ?? '').trim().slice(0, 2000) || null
@@ -64,35 +64,40 @@ export async function PATCH(
         // `limit(1)` rather than maybeSingle(): the unique index on name is
         // case-sensitive, so "Bob" and "bob" can both exist and maybeSingle
         // would throw rather than pick one.
-        const { data: matches } = await db
-          .from('people')
-          .select('id')
-          .ilike('name', name)
-          .limit(1)
+        const { data: matches } = await db.from('people').select('id, member_id').ilike('name', name).limit(1)
 
-        const existing = matches?.[0]
-        if (existing) {
-          personIds.push(existing.id)
-          continue
+        let personId = matches?.[0]?.id
+        let linkedMember = matches?.[0]?.member_id ?? null
+
+        if (!personId) {
+          const { data: created } = await db.from('people').insert({ name }).select('id').single()
+          personId = created?.id
         }
-        const { data: created } = await db
-          .from('people')
-          .insert({ name })
-          .select('id')
-          .single()
-        if (created) personIds.push(created.id)
+        if (!personId) continue
+
+        // If this name is a member's, link the person row so the tag carries
+        // that member's avatar and their "By person" page merges cleanly.
+        if (!linkedMember) {
+          const { data: member } = await db
+            .from('members')
+            .select('id')
+            .ilike('display_name', name)
+            .limit(1)
+          if (member?.[0]) {
+            await db.from('people').update({ member_id: member[0].id }).eq('id', personId)
+            linkedMember = member[0].id
+          }
+        }
+        personIds.push(personId)
       }
 
-      const { error: untagError } = await db
-        .from('media_people')
-        .delete()
-        .eq('media_id', id)
+      const { error: untagError } = await db.from('media_people').delete().eq('media_id', id)
       if (untagError) return fail(`Could not update the tags: ${untagError.message}`, 500)
 
       if (personIds.length) {
-        const { error: tagError } = await db
-          .from('media_people')
-          .insert(personIds.map((person_id) => ({ media_id: id, person_id })))
+        const { error: tagError } = await db.from('media_people').insert(
+          personIds.map((person_id) => ({ media_id: id, person_id, tagged_by: actor.memberId })),
+        )
         if (tagError) return fail(`Could not update the tags: ${tagError.message}`, 500)
       }
     }
@@ -110,24 +115,26 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const session = await getSession()
-    if (!session) return fail('Not signed in.', 401)
+    const actor = await getActor()
+    if (!actor) return fail('Not signed in.', 401)
 
     const { id } = await params
-    const db = await createClient()
+    const db = actor.db
 
     const { data: media } = await db
       .from('media')
-      .select('id, uploader_id, stream_uid')
+      .select('id, uploader_id, uploader_member, stream_uid')
       .eq('id', id)
       .maybeSingle()
 
     if (!media) return fail('That memory is not here.', 404)
-    if (media.uploader_id !== session.userId && session.profile.role !== 'owner') {
+    const mine = actor.memberId
+      ? media.uploader_member === actor.memberId
+      : media.uploader_id === actor.userId
+    if (!mine && !actor.isOwner) {
       return fail('Only the person who added this — or the owner — can remove it.', 403)
     }
 
-    // RLS enforces this too; the check above is so the message is a sentence.
     const { error } = await db.from('media').delete().eq('id', id)
     if (error) return fail(`Could not remove that: ${error.message}`, 500)
 
@@ -136,8 +143,8 @@ export async function DELETE(
       // that blocks the user costs more.
       try {
         await deleteVideo(media.stream_uid)
-      } catch (error) {
-        console.error('[reel] could not delete Stream video', media.stream_uid, error)
+      } catch (streamError) {
+        console.error('[reel] could not delete Stream video', media.stream_uid, streamError)
       }
     }
 

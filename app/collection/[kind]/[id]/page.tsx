@@ -3,10 +3,10 @@ import { notFound, redirect } from 'next/navigation'
 import { Feed } from '@/components/Feed'
 import { Shell } from '@/components/Shell'
 import { AddMemoriesButton } from '@/components/AddMemories'
-import { requireSession } from '@/lib/auth'
+import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
 import { getFeed } from '@/lib/queries'
-import { createClient } from '@/lib/supabase/server'
+import { readDb } from '@/lib/db'
 import { fullDate } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
@@ -22,11 +22,11 @@ export default async function CollectionPage({
 }) {
   if (!isConfigured('supabase')) redirect('/setup')
 
-  const session = await requireSession()
+  const viewer = await requireViewer()
   const { kind, id } = await params
   if (!KINDS.includes(kind as Kind)) notFound()
 
-  const db = await createClient()
+  const db = readDb()
 
   let title = ''
   let subtitle: string | null = null
@@ -58,7 +58,7 @@ export default async function CollectionPage({
   })
 
   return (
-    <Shell session={session}>
+    <Shell viewer={viewer}>
       <header className="mt-6 mb-14">
         <Link
           href="/browse"
@@ -66,7 +66,9 @@ export default async function CollectionPage({
         >
           ← Browse
         </Link>
-        <h1 className="mt-4 font-display text-display leading-none text-balance">{title}</h1>
+        <h1 className="mt-4 text-[clamp(2.25rem,7vw,3.5rem)] font-semibold tracking-[-0.03em] leading-none text-balance">
+          {title}
+        </h1>
         {subtitle && <p className="mt-3 text-paper-dim">{subtitle}</p>}
       </header>
 

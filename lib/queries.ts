@@ -4,7 +4,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { isConfigured } from '@/lib/env'
 import { presignGet } from '@/lib/r2'
 import { playbackUrls } from '@/lib/stream'
-import type { EventRow, MediaRow, MediaView, Person, Profile } from '@/lib/types'
+import { avatarUrl } from '@/lib/community/avatars'
+import type { EventRow, MediaRow, MediaView, Person, Profile, TaggedPerson } from '@/lib/types'
 
 /**
  * Reading media.
@@ -365,11 +366,42 @@ export async function getMusicTracks(db: DB): Promise<{ id: string; title: strin
 // Hydration — signed URLs + the human details
 // ---------------------------------------------------------------------------
 
+/** A filesystem-safe, human-legible download name from a memory's metadata. */
+function buildDownloadName(
+  takenAt: string,
+  eventName: string | null | undefined,
+  names: string[],
+  ext: string,
+  fallbackId: string,
+): string {
+  const slug = (value: string) =>
+    value
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40)
+
+  const date = new Date(takenAt)
+  const day = Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
+  const parts = [
+    eventName ? slug(eventName) : 'memory',
+    day,
+    names.length ? slug(names.slice(0, 3).join('-')) : '',
+  ].filter(Boolean)
+
+  const stem = parts.join('_') || `memory-${fallbackId}`
+  return `${stem}${ext}`
+}
+
 export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
   if (rows.length === 0) return []
 
   const ids = rows.map((r) => r.id)
   const uploaderIds = [...new Set(rows.map((r) => r.uploader_id).filter(Boolean))] as string[]
+  const uploaderMemberIds = [
+    ...new Set(rows.map((r) => r.uploader_member).filter(Boolean)),
+  ] as string[]
   const eventIds = [...new Set(rows.map((r) => r.event_id).filter(Boolean))] as string[]
 
   const [profiles, events, reactions, comments, voices, tags] = await Promise.all([
@@ -382,7 +414,7 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
     db.from('reactions').select('media_id').in('media_id', ids),
     db.from('comments').select('media_id').in('media_id', ids),
     db.from('voice_notes').select('media_id').in('media_id', ids),
-    db.from('media_people').select('media_id, people(id, name)').in('media_id', ids),
+    db.from('media_people').select('media_id, people(id, name, member_id)').in('media_id', ids),
   ])
 
   const nameById = new Map(
@@ -393,6 +425,24 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
   )
   const eventById = new Map(
     ((events.data ?? []) as Pick<EventRow, 'id' | 'name'>[]).map((e) => [e.id, e.name]),
+  )
+
+  // Community members: uploaders and tagged people alike resolve to a name and
+  // an avatar. Collected in one pass so a feed page presigns nothing extra.
+  const taggedMemberIds = new Set<string>()
+  type TagPersonRow = { id: string; name: string; member_id: string | null }
+  for (const row of (tags.data ?? []) as { people: TagPersonRow | TagPersonRow[] | null }[]) {
+    const list = Array.isArray(row.people) ? row.people : row.people ? [row.people] : []
+    for (const p of list) if (p.member_id) taggedMemberIds.add(p.member_id)
+  }
+  const memberIdsToLoad = [...new Set([...uploaderMemberIds, ...taggedMemberIds])]
+  const { data: memberRows } = memberIdsToLoad.length
+    ? await db.from('members').select('id, display_name, avatar_path').in('id', memberIdsToLoad)
+    : { data: [] }
+  const memberById = new Map(
+    ((memberRows ?? []) as { id: string; display_name: string; avatar_path: string | null }[]).map(
+      (m) => [m.id, { display_name: m.display_name, avatar_url: avatarUrl(m.avatar_path) }],
+    ),
   )
 
   const count = (data: unknown) => {
@@ -406,15 +456,25 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
   const commentCounts = count(comments.data)
   const voiceCounts = count(voices.data)
 
-  const peopleByMedia = new Map<string, { id: string; name: string }[]>()
+  const peopleByMedia = new Map<string, TaggedPerson[]>()
   // PostgREST returns an embedded to-one relation as an object in some versions
   // and a single-element array in others. Accept either.
-  type Tagged = { id: string; name: string }
+  type Tagged = { id: string; name: string; member_id: string | null }
   type TagRow = { media_id: string; people: Tagged | Tagged[] | null }
   for (const row of (tags.data ?? []) as unknown as TagRow[]) {
     const tagged = Array.isArray(row.people) ? row.people : row.people ? [row.people] : []
     if (tagged.length === 0) continue
-    peopleByMedia.set(row.media_id, [...(peopleByMedia.get(row.media_id) ?? []), ...tagged])
+    const resolved: TaggedPerson[] = tagged.map((p) => {
+      const member = p.member_id ? memberById.get(p.member_id) : null
+      return {
+        id: p.id,
+        // A member's chosen display name wins over the tag's stored text.
+        name: member?.display_name ?? p.name,
+        member_id: p.member_id,
+        avatar_url: member?.avatar_url ?? null,
+      }
+    })
+    peopleByMedia.set(row.media_id, [...(peopleByMedia.get(row.media_id) ?? []), ...resolved])
   }
 
   const r2Ready = isConfigured('r2')
@@ -437,14 +497,17 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
       }
 
       if (r2Ready) {
+        // A descriptive filename so a saved copy carries who/when/where instead
+        // of "IMG_4032.jpg": "sofias-birthday_2019-07-04_kamila-nick.jpg".
+        const ext = (row.original_filename?.match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase()
+        const eventName = row.event_id ? eventById.get(row.event_id) : null
+        const names = (peopleByMedia.get(row.id) ?? []).map((p) => p.name)
+        const downloadAs = buildDownloadName(row.taken_at, eventName, names, ext, row.id)
+
         const [displayUrl, thumbUrl, originalUrl] = await Promise.all([
           row.r2_display_key ? presignGet(row.r2_display_key) : null,
           row.r2_thumb_key ? presignGet(row.r2_thumb_key) : null,
-          row.r2_key
-            ? presignGet(row.r2_key, {
-                downloadAs: row.original_filename ?? `memory-${row.id}`,
-              })
-            : null,
+          row.r2_key ? presignGet(row.r2_key, { downloadAs }) : null,
         ])
         display ??= displayUrl ?? originalUrl
         thumb ??= thumbUrl ?? displayUrl ?? originalUrl
@@ -456,12 +519,16 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
         download = playbackUrls(row.stream_uid).mp4
       }
 
+      const member = row.uploader_member ? memberById.get(row.uploader_member) : null
+
       return {
         ...row,
         uploader_name:
+          member?.display_name ??
           (row.uploader_id ? nameById.get(row.uploader_id) : null) ??
           row.uploader_label ??
           'Someone',
+        uploader_avatar_url: member?.avatar_url ?? null,
         event_name: row.event_id ? (eventById.get(row.event_id) ?? null) : null,
         display_url: display,
         thumb_url: thumb,

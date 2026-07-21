@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       .from('media')
       .insert({
         uploader_id: uploader.uploaderId,
+        uploader_member: uploader.uploaderMember,
         uploader_label: uploader.label,
         upload_link_id: uploader.linkId,
         type: 'video',

@@ -1,6 +1,39 @@
 export type Role = 'owner' | 'family'
+export type MemberRole = 'owner' | 'member'
 export type MediaType = 'photo' | 'video'
 export type MediaStatus = 'processing' | 'ready' | 'error'
+export type CollectionKind = 'album' | 'event'
+
+/**
+ * A community member. The passcode-era identity, decoupled from auth.users.
+ * `avatar_url` is resolved from `avatar_path` in the public avatars bucket.
+ */
+export interface Member {
+  id: string
+  first_name: string
+  last_initial: string | null
+  display_name: string
+  login_key: string
+  avatar_path: string | null
+  avatar_url: string | null
+  role: MemberRole
+  created_at: string
+  last_seen_at: string | null
+}
+
+/**
+ * Whoever is looking at the app right now — a passcode member, or a legacy
+ * magic-link account. Everything the chrome needs, from either identity.
+ */
+export interface Viewer {
+  kind: 'member' | 'legacy'
+  id: string
+  display_name: string
+  avatar_url: string | null
+  role: MemberRole
+  /** Present only for members, for community writes that attribute to member_id. */
+  memberId: string | null
+}
 
 export interface Profile {
   id: string
@@ -18,11 +51,51 @@ export interface EventRow {
   cover_media_id: string | null
   created_by: string | null
   created_at: string
+  // Community layer. The physical table is `events`; kind distinguishes a
+  // community-board event from a quiet album.
+  kind: CollectionKind
+  description: string | null
+  created_by_member: string | null
+  flyer_path: string | null
+}
+
+/** A board event with everything the feed needs resolved. */
+export interface BoardEvent {
+  id: string
+  name: string
+  event_date: string | null
+  description: string | null
+  flyer_url: string | null
+  cover_url: string | null
+  host_name: string | null
+  host_avatar_url: string | null
+  media_count: number
+  comment_count: number
+  created_at: string
+}
+
+/** The domain name for the events table. An event is a collection with kind='event'. */
+export type Collection = EventRow
+
+/** A tagged person: a member (with avatar) or a free-text name. */
+export interface TaggedPerson {
+  id: string
+  name: string
+  member_id: string | null
+  avatar_url: string | null
+}
+
+/** The author of a reaction or comment, resolved for display. */
+export interface Author {
+  id: string
+  display_name: string
+  avatar_url: string | null
 }
 
 export interface MediaRow {
   id: string
   uploader_id: string | null
+  uploader_member: string | null
   uploader_label: string | null
   type: MediaType
   stream_uid: string | null
@@ -124,5 +197,7 @@ export interface MediaView extends MediaRow {
   reaction_count: number
   comment_count: number
   voice_note_count: number
-  people: { id: string; name: string }[]
+  people: TaggedPerson[]
+  /** The uploader's avatar, when they're a community member. */
+  uploader_avatar_url: string | null
 }

@@ -1,14 +1,16 @@
 import { fail, handleError, ok, readJson } from '@/lib/api'
 import { getSession } from '@/lib/auth'
+import { getViewer } from '@/lib/viewer'
 import { buildKey, presignGet, presignPut, sanitizeFilename } from '@/lib/r2'
+import { readDb } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
 
 /** The music bed under Movie Mode. Whatever the family wants playing. */
 
 export async function GET() {
   try {
-    if (!(await getSession())) return fail('Not signed in.', 401)
-    const db = await createClient()
+    if (!(await getViewer())) return fail('Not signed in.', 401)
+    const db = readDb()
 
     const { data } = await db
       .from('music_tracks')

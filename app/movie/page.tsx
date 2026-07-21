@@ -1,20 +1,20 @@
 import { redirect } from 'next/navigation'
 import { MovieMode, type Flavor } from '@/components/MovieMode'
-import { requireSession } from '@/lib/auth'
+import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
 import { getEvents, getFeed, getPeople, getYears } from '@/lib/queries'
 import { reconcileProcessingVideos } from '@/lib/reconcile'
-import { createClient } from '@/lib/supabase/server'
+import { readDb } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
 export default async function MoviePage() {
   if (!isConfigured('supabase')) redirect('/setup')
-  await requireSession()
+  await requireViewer()
 
   await reconcileProcessingVideos()
 
-  const db = await createClient()
+  const db = readDb()
   const [media, events, people, years] = await Promise.all([
     getFeed(db, { limit: 400, order: 'taken' }),
     getEvents(db),

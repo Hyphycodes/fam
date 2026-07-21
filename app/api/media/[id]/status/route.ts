@@ -1,5 +1,5 @@
 import { fail, handleError, ok } from '@/lib/api'
-import { getSession } from '@/lib/auth'
+import { getViewer } from '@/lib/viewer'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getVideo } from '@/lib/stream'
 
@@ -20,8 +20,8 @@ export async function GET(
     // Readable by a signed-in member, or by anyone holding the upload link that
     // put the row there in the first place.
     const token = new URL(request.url).searchParams.get('token')
-    const session = await getSession()
-    if (!session && !token) return fail('Not signed in.', 401)
+    const viewer = await getViewer()
+    if (!viewer && !token) return fail('Not signed in.', 401)
 
     const admin = createAdminClient()
     const { data: media } = await admin
@@ -32,7 +32,7 @@ export async function GET(
 
     if (!media) return fail('That memory is not here.', 404)
 
-    if (!session && token) {
+    if (!viewer && token) {
       const { data: link } = await admin
         .from('event_upload_links')
         .select('id, revoked_at, expires_at')
