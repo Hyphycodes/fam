@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Lightbox } from '@/components/Lightbox'
-import { duration, warmDate } from '@/lib/format'
+import { duration, osdDate, warmDate } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
 /**
@@ -98,10 +98,11 @@ export function Feed({
                   : undefined
               }
             >
-              {/* A huge ghost numeral where one year gives way to the next —
-                  scrolling the feed becomes scrolling back through time. */}
+              {/* Where one year gives way to the next, the tape rewinds —
+                  scrolling the feed becomes seeking back through time. */}
               {index > 0 && items[index - 1].taken_year !== media.taken_year && (
-                <div className="mb-16 flex items-center gap-6 sm:mb-24">
+                <div className="mb-16 flex items-center gap-5 sm:mb-24">
+                  <span className="year-ghost" aria-hidden="true">◄◄</span>
                   <span className="year-ghost">{media.taken_year}</span>
                   <span className="h-px flex-1 bg-edge" />
                 </div>
@@ -129,24 +130,30 @@ export function Feed({
       )}
 
       {loadError && (
-        <div className="mt-12 rounded-2xl border border-edge bg-ink-raised px-5 py-4 sm:flex sm:items-center sm:justify-between sm:gap-6">
-          <p className="text-sm leading-relaxed text-paper-dim">
-            The next reel did not come through. Your place in the archive is safe.
-          </p>
+        <div className="mt-12 rounded-lg border border-edge bg-ink-raised px-5 py-4 sm:flex sm:items-center sm:justify-between sm:gap-6">
+          <div>
+            <p className="osd text-base text-rec">⚠ Tracking error</p>
+            <p className="mt-1 text-sm leading-relaxed text-paper-dim">
+              The next stretch of tape did not come through. Your place in the archive is safe.
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => void loadMore(true)}
             className="btn btn-ghost mt-4 shrink-0 sm:mt-0"
           >
-            Try again
+            Retry
           </button>
         </div>
       )}
 
       {!cursor && items.length > 8 && (
-        <p className="mt-24 text-center font-display text-xl text-paper-faint">
-          That&rsquo;s everything, all the way back.
-        </p>
+        <div className="mt-24 text-center">
+          <p className="osd osd-burn text-2xl text-paper-soft">◼ End of tape</p>
+          <p className="mt-2 text-sm text-paper-faint">
+            That&rsquo;s everything, all the way back. Be kind — rewind.
+          </p>
+        </div>
       )}
 
       {open !== null && (
@@ -179,7 +186,7 @@ function MemoryCard({
       <button
         onClick={onOpen}
         aria-label={`Open ${media.caption || `${media.type} shared by ${media.uploader_name}`}`}
-        className="group relative block w-full overflow-hidden rounded-3xl bg-ink-raised ring-1 ring-edge transition-shadow duration-500 ring-inset hover:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.9)] hover:ring-edge-strong"
+        className="group relative block w-full overflow-hidden rounded-lg bg-ink-raised ring-1 ring-edge transition-shadow duration-500 ring-inset hover:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.9)] hover:ring-edge-strong"
         style={{ aspectRatio: `${Math.min(Math.max(ratio, 0.6), 2.2)}` }}
       >
         {media.thumb_url || media.display_url ? (
@@ -200,24 +207,29 @@ function MemoryCard({
           <div className="h-full w-full animate-sweep" />
         )}
 
-        {/* A breath of dark at the base so badges always sit on something. */}
-        <div className="absolute inset-0 bg-gradient-to-t from-ink/40 via-transparent to-transparent opacity-80 transition-opacity duration-500 group-hover:opacity-100" />
+        {/* A breath of dark at the base so the burned-in OSD always reads. */}
+        <div className="absolute inset-0 bg-gradient-to-t from-ink/45 via-transparent to-transparent opacity-80 transition-opacity duration-500 group-hover:opacity-100" />
+
+        {/* The timestamp, burned into the frame the way the camcorder left it. */}
+        <span className="osd osd-burn absolute bottom-4 left-4 text-base sm:bottom-5 sm:left-5 sm:text-lg">
+          {osdDate(media.taken_at)}
+        </span>
 
         {media.type === 'video' && (
-          <span className="absolute bottom-5 left-5 flex items-center gap-2.5 rounded-full border border-white/10 bg-ink/75 px-4 py-2 text-xs text-paper backdrop-blur-md transition-transform duration-500 group-hover:scale-105">
-            <span className="grid h-5 w-5 place-items-center rounded-full bg-ember text-[9px] text-[#1a1105]">
-              ▶
-            </span>
-            {duration(media.duration_seconds) || 'Video'}
+          <span className="osd osd-burn absolute top-4 left-4 flex items-center gap-2 text-base opacity-90 transition-opacity duration-300 group-hover:opacity-100 sm:top-5 sm:left-5 sm:text-lg">
+            ▶ PLAY
+            {duration(media.duration_seconds) && (
+              <span className="text-paper-soft">{duration(media.duration_seconds)}</span>
+            )}
           </span>
         )}
 
         {media.favorite && (
           <span
-            className="absolute top-5 right-5 text-ember drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
+            className="osd osd-burn absolute top-4 right-4 flex items-center gap-1.5 text-base text-rec sm:top-5 sm:right-5 sm:text-lg"
             title="One of the good ones"
           >
-            ★
+            <span className="rec-dot" aria-hidden="true" /> KEEP
           </span>
         )}
       </button>
@@ -225,11 +237,11 @@ function MemoryCard({
       <div className="mt-4 flex flex-col gap-2 px-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
         <div className="min-w-0">
           {media.caption && (
-            <p className="mb-1 font-display text-2xl leading-snug text-paper text-balance">
+            <p className="hand mb-0.5 text-[1.65rem] leading-snug text-ember-soft text-balance">
               {media.caption}
             </p>
           )}
-          <p className="text-sm leading-relaxed text-paper-dim">
+          <p className="osd text-sm leading-relaxed text-paper-dim sm:text-base">
             {media.uploader_name}
             <span className="mx-2 text-paper-faint">·</span>
             {warmDate(media.taken_at)}
@@ -259,5 +271,5 @@ function Counts({ media }: { media: MediaView }) {
   ].filter(Boolean)
 
   if (bits.length === 0) return null
-  return <p className="shrink-0 text-sm text-paper-faint">{bits.join(' · ')}</p>
+  return <p className="osd shrink-0 text-sm text-paper-faint">{bits.join(' · ')}</p>
 }

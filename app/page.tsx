@@ -36,7 +36,7 @@ export default async function HomePage() {
   const total = years.reduce((sum, y) => sum + y.count, 0)
   const span =
     years.length > 1
-      ? `${years[years.length - 1].year} — ${years[0].year}`
+      ? `${years[years.length - 1].year}–${years[0].year}`
       : years.length === 1
         ? String(years[0].year)
         : null
@@ -49,12 +49,14 @@ export default async function HomePage() {
 
       <section>
         {media.length > 0 && (
-          <div className="mb-8 flex items-end justify-between border-b border-edge pb-5 sm:mb-12">
+          <div className="mb-8 flex items-end justify-between border-b border-edge pb-4 sm:mb-12">
             <div>
-              <p className="eyebrow mb-2">The latest chapter</p>
-              <h2 className="font-display text-4xl text-balance sm:text-5xl">Recently added</h2>
+              <p className="eyebrow mb-1.5">▸ Now playing</p>
+              <h2 className="osd rgb-split text-4xl text-balance sm:text-5xl">
+                Recently added
+              </h2>
             </div>
-            <span className="text-xs tracking-[0.25em] text-paper-faint uppercase">
+            <span className="osd hidden text-sm text-paper-faint sm:block">
               Newest first
             </span>
           </div>
@@ -69,7 +71,7 @@ export default async function HomePage() {
               <section className="border-y border-edge py-10 sm:py-14">
                 <Shelf
                   title={onThisDayTitle(onThisDay[0].taken_at)}
-                  subtitle="On this day"
+                  subtitle="⏮ On this day"
                   items={onThisDay}
                 />
               </section>
@@ -82,45 +84,51 @@ export default async function HomePage() {
   )
 }
 
-/** The archive announcing itself: name, count, and the years it spans. */
+/** The archive announcing itself through a camcorder viewfinder: REC light,
+ *  tape counter, and the family's title burned in like an OSD titler. */
 function Masthead({ total, span }: { total: number; span: string | null }) {
   return (
-    <section className="home-masthead mt-10 mb-14 animate-rise sm:mt-16 sm:mb-20">
-      <div className="max-w-4xl">
-        <p className="eyebrow">
-          {appName}<span className="text-ember">.</span> · The private family archive
-        </p>
-        <h1 className="mt-5 font-display text-[clamp(3.7rem,10vw,7.5rem)] leading-[0.84] tracking-[-0.04em] text-balance">
-          The story of us,
-          <br />
-          <span className="text-paper-dim italic">still in motion.</span>
-        </h1>
-      </div>
-
-      <div className="mt-8 grid gap-7 border-t border-edge pt-7 sm:grid-cols-[1fr_auto] sm:items-end">
-        <div>
-          <p className="max-w-lg text-base leading-relaxed text-paper-soft sm:text-lg">
-            The photographs, home movies, voices and small moments that become a family
-            history — kept close, and made to be watched together.
-          </p>
-          <p className="mt-5 text-xs tracking-[0.16em] text-paper-faint uppercase">
-            {total} {total === 1 ? 'memory' : 'memories'}
-            {span && (
-              <>
-                <span className="mx-2.5">·</span>
-                <span>{span}</span>
-              </>
-            )}
-          </p>
+    <section className="home-masthead mt-8 mb-14 animate-rise sm:mt-12 sm:mb-20">
+      <div className="viewfinder tracking-wobble relative px-5 py-6 sm:px-8 sm:py-9">
+        <div className="osd osd-burn flex items-center justify-between text-base sm:text-lg">
+          <span className="flex items-center gap-2.5 text-rec" aria-hidden="true">
+            <span className="rec-dot" /> REC
+          </span>
+          <span className="text-paper-soft">
+            SP<span className="mx-2 text-paper-faint">·</span>{appName}
+          </span>
         </div>
 
+        <h1 className="osd rgb-split mt-8 text-[clamp(3.3rem,11vw,7.5rem)] leading-[0.88] text-balance sm:mt-12">
+          The story
+          <br />
+          of us<span className="cursor-blink text-ember" aria-hidden="true">▮</span>
+        </h1>
+        <p className="osd mt-3 text-[clamp(1.15rem,3.4vw,1.8rem)] text-ember">
+          ▸ Still playing
+        </p>
+
+        <div className="osd osd-burn mt-10 flex flex-wrap items-center gap-x-6 gap-y-2 text-base text-paper-soft sm:mt-14 sm:text-lg">
+          <span>CNT {String(total).padStart(4, '0')}</span>
+          {span && <span>TAPE {span}</span>}
+        </div>
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-end justify-between gap-6 sm:mt-8">
+        <p className="max-w-md text-sm leading-relaxed text-paper-dim sm:text-base">
+          The photographs, home movies, voices and small moments that become a
+          family history — kept close, and made to be watched together.
+        </p>
+
         <Link href="/movie" className="movie-invitation group">
-          <span className="grid h-11 w-11 place-items-center rounded-full bg-ember text-[#1a1105] transition-transform group-hover:scale-105">
+          <span className="grid h-11 w-11 place-items-center rounded-[0.45rem] bg-ember text-[#221302] shadow-[0_0_20px_-4px_rgba(255,180,94,0.7)] transition-transform group-hover:scale-105">
             <span className="ml-0.5 text-sm" aria-hidden="true">▶</span>
           </span>
           <span>
-            <span className="block text-sm text-paper">Enter Movie Mode</span>
-            <span className="mt-0.5 block text-xs text-paper-dim">Watch the archive unfold</span>
+            <span className="osd block text-base leading-tight text-paper">Play all</span>
+            <span className="osd mt-0.5 block text-sm leading-tight text-paper-dim">
+              Movie mode · the big screen
+            </span>
           </span>
         </Link>
       </div>
@@ -131,10 +139,14 @@ function Masthead({ total, span }: { total: number; span: string | null }) {
 function Welcome({ name }: { name: string }) {
   return (
     <section className="mt-10 mb-16 animate-rise">
-      <h2 className="font-display text-display leading-[0.95] text-balance">
+      <p className="eyebrow mb-4">
+        <span className="rec-dot mr-2 align-middle" aria-hidden="true" />
+        New viewer detected
+      </p>
+      <h2 className="osd rgb-split text-[clamp(3rem,10vw,5.5rem)] leading-[0.9] text-balance">
         You&rsquo;re in,
         <br />
-        <span className="text-paper-dim italic">{name}.</span>
+        <span className="hand normal-case tracking-normal text-ember-soft">{name}.</span>
       </h2>
       <p className="mt-6 max-w-md text-lg leading-relaxed text-paper-soft text-balance">
         Everything below is ours. Scroll it, react to it, leave a note — and add whatever
@@ -154,14 +166,25 @@ function onThisDayTitle(takenAt: string): string {
 
 function FirstTime({ name }: { name: string }) {
   return (
-    <div className="py-16 animate-rise">
-      <h2 className="font-display text-display leading-[0.95] text-balance">
+    <div className="py-10 animate-rise sm:py-16">
+      <div className="no-signal aspect-[16/9] w-full rounded-lg ring-1 ring-edge ring-inset">
+        <div className="relative z-10 text-center">
+          <p className="osd text-[clamp(2rem,7vw,3.75rem)] leading-none text-[#dce8fa]">
+            No signal
+          </p>
+          <p className="osd mt-3 text-sm text-[#8fa5c8] sm:text-base">
+            Insert first memory to begin
+          </p>
+        </div>
+      </div>
+
+      <h2 className="osd rgb-split mt-10 text-[clamp(2.6rem,8vw,4.5rem)] leading-[0.9] text-balance">
         Nothing here yet,
         <br />
-        <span className="text-paper-dim italic">{name}.</span>
+        <span className="hand normal-case tracking-normal text-ember-soft">{name}.</span>
       </h2>
 
-      <p className="mt-8 max-w-md text-lg leading-relaxed text-paper-soft text-balance">
+      <p className="mt-6 max-w-md text-lg leading-relaxed text-paper-soft text-balance">
         Add the first one. A photo, an old video, something from your camera roll you keep
         meaning to show everyone. It plays for the whole family the moment it lands.
       </p>

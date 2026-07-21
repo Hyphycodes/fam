@@ -30,6 +30,14 @@ export function warmDate(input: string | Date): string {
   return `${MONTHS[date.getMonth()]} ${date.getFullYear()}`
 }
 
+/** The date the way a camcorder burned it into the corner: "NOV 12 2006". */
+export function osdDate(input: string | Date): string {
+  const date = typeof input === 'string' ? new Date(input) : input
+  if (Number.isNaN(date.getTime())) return ''
+  const month = MONTHS[date.getMonth()].slice(0, 3).toUpperCase()
+  return `${month} ${date.getDate()} ${date.getFullYear()}`
+}
+
 export function fullDate(input: string | Date): string {
   const date = typeof input === 'string' ? new Date(input) : input
   if (Number.isNaN(date.getTime())) return ''

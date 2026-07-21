@@ -15,7 +15,7 @@ export function Nav({ isOwner }: { isOwner: boolean }) {
     >
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-ink via-ink/92 to-transparent" />
 
-      <div className="relative flex items-center gap-0.5 rounded-[1.65rem] border border-edge-strong bg-ink-raised/94 p-1.5 shadow-[0_18px_60px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl">
+      <div className="relative flex items-center gap-0.5 rounded-[0.9rem] border border-edge-strong bg-ink-raised/94 p-1.5 shadow-[0_18px_60px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl">
         <NavLink href="/" label="Home" icon="home" />
         <NavLink href="/browse" label="Browse" icon="browse" />
         <AddMemoriesButton />
@@ -34,16 +34,19 @@ function NavLink({ href, label, icon }: { href: string; label: string; icon: Doc
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
-      className={`dock-link relative flex min-h-14 w-[3.55rem] flex-col items-center justify-center gap-1 rounded-[1.15rem] text-[10px] tracking-[0.02em] transition-all sm:w-[4.35rem] ${
+      className={`dock-link relative flex min-h-14 w-[3.55rem] flex-col items-center justify-center gap-0.5 rounded-[0.6rem] transition-all sm:w-[4.35rem] ${
         active
           ? 'bg-ink-hover text-ember-soft'
           : 'text-paper-dim hover:bg-ink-hover hover:text-paper active:scale-[0.97]'
       }`}
     >
       <DockGlyph icon={icon} />
-      <span>{label}</span>
+      <span className="osd text-[0.8rem] leading-none">{label}</span>
       {active && (
-        <span className="absolute bottom-1 h-0.5 w-3 rounded-full bg-ember" aria-hidden="true" />
+        <span
+          className="absolute bottom-1 h-0.5 w-3 rounded-full bg-ember shadow-[0_0_8px_rgba(255,180,94,0.9)]"
+          aria-hidden="true"
+        />
       )}
     </Link>
   )
