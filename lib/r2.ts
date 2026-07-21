@@ -1,6 +1,12 @@
 import 'server-only'
 
-import { GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import {
+  GetObjectCommand,
+  HeadBucketCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { isConfigured, missing, require_ } from '@/lib/env'
 
@@ -145,27 +151,72 @@ export interface R2Health {
   missingVars: string[]
   reachable: boolean
   error?: string
+  /** The actual runtime values in this deployment, not the dashboard's copy —
+   *  the point is to catch a value that's wrong *here* even if it looks right
+   *  in Vercel's settings page. Endpoint is truncated to its host; nothing
+   *  secret is ever included. */
+  bucket?: string
+  endpointHost?: string
+  /** A live peek at the bucket's contents, so "is anything landing here" is
+   *  answered by the app itself instead of a separate dashboard visit. */
+  objectCount?: number
+  sampleKeys?: string[]
 }
 
 /**
  * A real, live check — not "are the env vars present" but "does R2 actually
- * answer to them". Presigning is pure local HMAC math, so a bad credential or
- * a nonexistent bucket never shows up there; this is the one call in this
- * file that actually reaches Cloudflare, which is what makes it a genuine
- * diagnostic instead of another guess.
+ * answer to them, for the exact bucket and endpoint this deployment is
+ * configured with". Presigning is pure local HMAC math, so a bad credential,
+ * wrong bucket name, or nonexistent bucket never shows up there; this is the
+ * one call in this file that actually reaches Cloudflare, which is what makes
+ * it a genuine diagnostic instead of another guess.
  */
 export async function checkR2Health(): Promise<R2Health> {
   if (!isConfigured('r2')) {
     return { configured: false, missingVars: missing('r2'), reachable: false }
   }
+
+  const bucketName = bucket()
+  const endpointHost = (() => {
+    try {
+      return new URL(require_('R2_ENDPOINT')).host
+    } catch {
+      return require_('R2_ENDPOINT')
+    }
+  })()
+
   try {
-    await s3().send(new HeadBucketCommand({ Bucket: bucket() }))
-    return { configured: true, missingVars: [], reachable: true }
+    await s3().send(new HeadBucketCommand({ Bucket: bucketName }))
+
+    // A separate try: an R2 token scoped to Object Read & Write may not carry
+    // ListBucket. If this fails, the bucket is still reachable — we just
+    // can't show a live count, which beats calling the whole thing broken.
+    let objectCount: number | undefined
+    let sampleKeys: string[] | undefined
+    try {
+      const listed = await s3().send(new ListObjectsV2Command({ Bucket: bucketName, MaxKeys: 5 }))
+      objectCount = listed.KeyCount ?? listed.Contents?.length ?? 0
+      sampleKeys = (listed.Contents ?? []).map((o) => o.Key ?? '').filter(Boolean)
+    } catch {
+      // Listing isn't required for uploads to work — leave it unset.
+    }
+
+    return {
+      configured: true,
+      missingVars: [],
+      reachable: true,
+      bucket: bucketName,
+      endpointHost,
+      objectCount,
+      sampleKeys,
+    }
   } catch (error) {
     return {
       configured: true,
       missingVars: [],
       reachable: false,
+      bucket: bucketName,
+      endpointHost,
       error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
     }
   }
