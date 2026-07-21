@@ -406,7 +406,7 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
 
   const [profiles, events, reactions, comments, voices, tags] = await Promise.all([
     uploaderIds.length
-      ? db.from('profiles').select('id, display_name').in('id', uploaderIds)
+      ? db.from('profiles').select('id, display_name, avatar_url').in('id', uploaderIds)
       : Promise.resolve({ data: [] }),
     eventIds.length
       ? db.from('events').select('id, name').in('id', eventIds)
@@ -421,6 +421,13 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
     ((profiles.data ?? []) as Pick<Profile, 'id' | 'display_name'>[]).map((p) => [
       p.id,
       p.display_name,
+    ]),
+  )
+  // A legacy uploader's own profile photo, for parity with a member's avatar.
+  const legacyAvatarById = new Map(
+    ((profiles.data ?? []) as Pick<Profile, 'id' | 'avatar_url'>[]).map((p) => [
+      p.id,
+      avatarUrl(p.avatar_url),
     ]),
   )
   const eventById = new Map(
@@ -528,7 +535,9 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
           (row.uploader_id ? nameById.get(row.uploader_id) : null) ??
           row.uploader_label ??
           'Someone',
-        uploader_avatar_url: member?.avatar_url ?? null,
+        uploader_avatar_url:
+          member?.avatar_url ??
+          (row.uploader_id ? (legacyAvatarById.get(row.uploader_id) ?? null) : null),
         event_name: row.event_id ? (eventById.get(row.event_id) ?? null) : null,
         display_url: display,
         thumb_url: thumb,
