@@ -255,19 +255,22 @@ export class UploadQueue {
           headers: { 'Content-Type': contentType },
         })
       } catch (networkError) {
-        // A rejected PUT — not a bad status, an actual thrown error — almost
-        // always means the browser blocked the request before it ever reached
-        // R2. The one common cause: the bucket's CORS policy doesn't allow
-        // this origin/method yet (see SETUP.md → "R2 — CORS"). A real network
-        // outage would have already failed the JSON call a moment earlier.
-        console.error('[reel] photo PUT blocked before reaching storage', {
+        // A rejected PUT — not a bad status, an actual thrown error. This used
+        // to be hardcoded to "it's probably CORS", which was a guess, not a
+        // diagnosis — and it kept showing that same guess even after CORS was
+        // fixed, hiding whatever the real, still-live cause was. Show the
+        // browser's own error text instead: it's the one piece of this whole
+        // pipeline that's actually visible without server log access.
+        const detail =
+          networkError instanceof Error
+            ? `${networkError.name}: ${networkError.message}`
+            : String(networkError)
+        console.error('[reel] photo PUT rejected before getting a response', {
           key: url.split('?')[0],
           contentType,
           error: networkError,
         })
-        throw new Error(
-          'Photos could not reach cloud storage — this is almost always a one-time storage setup step (R2 CORS), not your connection. Ask whoever runs the archive to check SETUP.md.',
-        )
+        throw new Error(`Photos could not reach cloud storage (${detail}). Try again in a moment.`)
       }
       if (!response.ok) {
         throw new Error(
