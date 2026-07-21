@@ -503,14 +503,19 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
         thumb = display
       }
 
-      if (r2Ready) {
-        // A descriptive filename so a saved copy carries who/when/where instead
-        // of "IMG_4032.jpg": "sofias-birthday_2019-07-04_kamila-nick.jpg".
-        const ext = (row.original_filename?.match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase()
-        const eventName = row.event_id ? eventById.get(row.event_id) : null
-        const names = (peopleByMedia.get(row.id) ?? []).map((p) => p.name)
-        const downloadAs = buildDownloadName(row.taken_at, eventName, names, ext, row.id)
+      // A descriptive filename so a saved copy carries who/when/where instead
+      // of "IMG_4032.jpg": "sofias-birthday_2019-07-04_kamila-nick.jpg". Used
+      // both for R2's Content-Disposition and, client-side, as the name for a
+      // File handed to the Web Share API when saving straight to Photos.
+      const ext =
+        row.type === 'video'
+          ? '.mp4'
+          : (row.original_filename?.match(/\.[a-z0-9]+$/i)?.[0] ?? '').toLowerCase()
+      const eventName = row.event_id ? eventById.get(row.event_id) : null
+      const names = (peopleByMedia.get(row.id) ?? []).map((p) => p.name)
+      const downloadAs = buildDownloadName(row.taken_at, eventName, names, ext, row.id)
 
+      if (r2Ready) {
         const [displayUrl, thumbUrl, originalUrl] = await Promise.all([
           row.r2_display_key ? presignGet(row.r2_display_key) : null,
           row.r2_thumb_key ? presignGet(row.r2_thumb_key) : null,
@@ -544,6 +549,7 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
         hls_url: hls,
         iframe_url: iframe,
         download_url: download,
+        download_filename: download ? downloadAs : null,
         reaction_count: reactionCounts.get(row.id) ?? 0,
         comment_count: commentCounts.get(row.id) ?? 0,
         voice_note_count: voiceCounts.get(row.id) ?? 0,

@@ -6,6 +6,7 @@ import { Reactions } from '@/components/Reactions'
 import { Comments } from '@/components/Comments'
 import { VoiceNotes } from '@/components/VoiceNotes'
 import { MemoryEditor } from '@/components/MemoryEditor'
+import { DownloadButton } from '@/components/DownloadButton'
 import { ProcessingWatcher } from '@/components/ProcessingWatcher'
 import { Avatar } from '@/components/Avatar'
 import { requireViewer } from '@/lib/viewer'
@@ -112,12 +113,18 @@ export default async function MemoryPage({
 
         <div className="mt-8 flex flex-wrap items-center gap-3">
           {media.download_url && (
-            <a href={media.download_url} className="btn btn-ghost">
+            <DownloadButton
+              url={media.download_url}
+              filename={media.download_filename}
+              mimeType={media.mime_type}
+              byteSize={media.byte_size}
+              className="btn btn-ghost"
+            >
               Download original
               {media.byte_size ? (
                 <span className="text-paper-faint">· {fileSize(media.byte_size)}</span>
               ) : null}
-            </a>
+            </DownloadButton>
           )}
         </div>
 
