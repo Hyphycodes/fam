@@ -1,8 +1,8 @@
 import 'server-only'
 
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { require_ } from '@/lib/env'
+import { isConfigured, missing, require_ } from '@/lib/env'
 
 /**
  * R2 access.
@@ -112,4 +112,35 @@ export async function presignMany(
   return Promise.all(
     keys.map((key) => (key ? presignGet(key, { expiresIn }) : Promise.resolve(null))),
   )
+}
+
+export interface R2Health {
+  configured: boolean
+  missingVars: string[]
+  reachable: boolean
+  error?: string
+}
+
+/**
+ * A real, live check — not "are the env vars present" but "does R2 actually
+ * answer to them". Presigning is pure local HMAC math, so a bad credential or
+ * a nonexistent bucket never shows up there; this is the one call in this
+ * file that actually reaches Cloudflare, which is what makes it a genuine
+ * diagnostic instead of another guess.
+ */
+export async function checkR2Health(): Promise<R2Health> {
+  if (!isConfigured('r2')) {
+    return { configured: false, missingVars: missing('r2'), reachable: false }
+  }
+  try {
+    await s3().send(new HeadBucketCommand({ Bucket: bucket() }))
+    return { configured: true, missingVars: [], reachable: true }
+  } catch (error) {
+    return {
+      configured: true,
+      missingVars: [],
+      reachable: false,
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    }
+  }
 }

@@ -6,6 +6,7 @@ import {
   MusicManager,
   UploadLinkManager,
 } from '@/components/FamilyManager'
+import { StorageHealth } from '@/components/StorageHealth'
 import { requireViewer } from '@/lib/viewer'
 import { appName, appUrl, isConfigured } from '@/lib/env'
 import { getEvents, getInvites, getMusicTracks, getUploadLinks } from '@/lib/queries'
@@ -84,6 +85,13 @@ export default async function SettingsPage() {
               Sign out of {appName}
             </button>
           </form>
+
+          {isOwner && (
+            <div className="mt-10 border-t border-edge pt-8">
+              <p className="eyebrow mb-3">Troubleshooting</p>
+              <StorageHealth />
+            </div>
+          )}
         </section>
       </div>
     </Shell>

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { fail, handleError, isUploader, logDbError, ok, readJson, resolveUploader } from '@/lib/api'
 import { buildKey, presignPut } from '@/lib/r2'
+import { isConfigured, missing } from '@/lib/env'
 
 interface Body {
   filename?: string
@@ -34,6 +35,18 @@ export async function POST(request: Request) {
     const size = Number(body.size)
     if (!Number.isFinite(size) || size <= 0) return fail('That file looks empty.')
     if (size > 2 * 1024 ** 3) return fail('That photo is unusually large — over 2GB.')
+
+    // Videos never touch R2 (Cloudflare Stream handles their whole upload —
+    // record, playback), which is exactly why "video works, photo doesn't" is
+    // the classic symptom of R2 not being configured yet. Check first and say
+    // so plainly, instead of failing several steps later with no clue why.
+    if (!isConfigured('r2')) {
+      console.error('[reel:upload/photo] R2 is not configured — missing:', missing('r2'))
+      return fail(
+        'Photo storage isn’t finished being set up yet (videos use a different service, which is why they still work). Ask whoever runs the family archive to complete the Cloudflare R2 setup.',
+        503,
+      )
+    }
 
     const uploader = await resolveUploader(body)
     if (!isUploader(uploader)) return fail(uploader.error, uploader.status)
@@ -107,9 +120,14 @@ export async function POST(request: Request) {
       console.error('[reel:upload/photo] could not presign R2 keys', {
         mediaId,
         keys,
-        error: presignError instanceof Error ? presignError.stack : presignError,
+        name: presignError instanceof Error ? presignError.name : undefined,
+        message: presignError instanceof Error ? presignError.message : String(presignError),
+        stack: presignError instanceof Error ? presignError.stack : undefined,
       })
-      return fail('Could not prepare that upload for storage. Try again in a moment.', 500)
+      return fail(
+        'Could not prepare that upload for storage. Try again in a moment — if it keeps happening, check /api/debug/r2 for a live storage check.',
+        500,
+      )
     }
 
     return ok({ mediaId, put })
