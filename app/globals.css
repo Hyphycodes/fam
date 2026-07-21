@@ -1,44 +1,55 @@
 @import 'tailwindcss';
 
 /* ===========================================================================
-   Reel — a warm dark room, not an interface.
+   THE TAPE — the archive looks like the machine that recorded it.
 
-   Everything here leans on three ideas: warm blacks (never blue-grey), an
-   editorial serif doing the talking, and motion slow enough that you notice
-   the memory instead of the animation.
+   Three voices, one room:
+     · The MACHINE speaks in camcorder OSD — a pixel mono, burned into frames
+       with a white-hot glow. Dates, counts, controls, headlines.
+     · The HAND speaks in marker-on-a-tape-label script. Captions only.
+     · The ROOM is tungsten black under a CRT: grain, scanlines, a slow
+       tracking band, amber phosphor for light.
+
+   Atmosphere never beats legibility: every effect here is transform/opacity
+   only, and reduced-motion gets a still frame.
    =========================================================================== */
 
 @theme {
-  /* Warm blacks. The brown undertone is what stops it reading as "dashboard". */
-  --color-ink: #0a0908;
-  --color-ink-raised: #131110;
-  --color-ink-high: #1c1917;
-  --color-ink-hover: #24201d;
+  /* Tungsten blacks — warm to the point of brown, never blue-grey. */
+  --color-ink: #0d0a06;
+  --color-ink-raised: #161009;
+  --color-ink-high: #1e150c;
+  --color-ink-hover: #281b0e;
 
-  /* Aged paper, not white. */
-  --color-paper: #f7f2e9;
-  --color-paper-soft: #c6baa9;
-  --color-paper-dim: #a19687;
-  --color-paper-faint: #918679;
+  /* Warm phosphor whites, like text on a CRT. */
+  --color-paper: #f4ead6;
+  --color-paper-soft: #cfbe9f;
+  --color-paper-dim: #a5947a;
+  --color-paper-faint: #8b7b61;
 
-  /* One accent: lamplight. */
-  --color-ember: #d99b52;
-  --color-ember-soft: #f0c391;
-  --color-ember-deep: #8a5c28;
+  /* Amber phosphor — the OSD glow, the sodium lamp. */
+  --color-ember: #ffb45e;
+  --color-ember-soft: #ffd39a;
+  --color-ember-deep: #9c6420;
 
-  --color-edge: rgba(247, 242, 233, 0.09);
-  --color-edge-strong: rgba(247, 242, 233, 0.16);
+  /* The record light. Used sparingly: REC, KEEP, errors. */
+  --color-rec: #ff4b3e;
 
-  --font-display: var(--font-display-serif), 'Iowan Old Style', Georgia, serif;
+  --color-edge: rgba(255, 214, 160, 0.1);
+  --color-edge-strong: rgba(255, 214, 160, 0.2);
+
+  /* The camcorder titler IS the display face. */
+  --font-display: var(--font-osd-pixel), 'Courier New', monospace;
+  --font-osd: var(--font-osd-pixel), 'Courier New', monospace;
+  --font-hand: var(--font-hand-script), 'Segoe Print', cursive;
   --font-sans: var(--font-body-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
 
-  /* Cinematic scale — display sizes are deliberately a step too big. */
-  --text-display: 4.5rem;
-  --text-display--line-height: 0.95;
-  --text-display--letter-spacing: -0.03em;
-  --text-title: 2.75rem;
-  --text-title--line-height: 1.05;
-  --text-title--letter-spacing: -0.02em;
+  --text-display: 4.75rem;
+  --text-display--line-height: 0.92;
+  --text-display--letter-spacing: 0.01em;
+  --text-title: 2.5rem;
+  --text-title--line-height: 1;
+  --text-title--letter-spacing: 0.01em;
 
   --ease-cinema: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
@@ -57,7 +68,6 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    /* Room for the iPhone home indicator + our floating nav. */
     padding-bottom: env(safe-area-inset-bottom);
     overscroll-behavior-y: none;
     overflow-x: clip;
@@ -74,7 +84,6 @@
     border-radius: 2px;
   }
 
-  /* Native controls should feel like they belong in the room. */
   input,
   textarea,
   button,
@@ -88,7 +97,6 @@
     color: var(--color-paper-faint);
   }
 
-  /* Thin, warm scrollbars instead of the OS default slab. */
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--color-edge-strong) transparent;
@@ -107,16 +115,50 @@
 }
 
 @layer components {
-  /* A very light film grain over the whole app. At 3.5% it reads as texture
-     rather than noise, and it kills the flatness of large dark areas. */
+  /* Film grain over everything. At 4% it reads as texture, not noise. */
   .grain::after {
     content: '';
     position: fixed;
     inset: 0;
     z-index: 60;
     pointer-events: none;
-    opacity: 0.035;
+    opacity: 0.04;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* CRT scanlines + a slow tracking band drifting down the tube. A real
+     element (not a body pseudo — those are taken by grain/vignette). */
+  .crt-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 58;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.14) 0px,
+      rgba(0, 0, 0, 0.14) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+  .crt-overlay::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: -20vh;
+    height: 14vh;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      rgba(255, 180, 94, 0.05) 45%,
+      rgba(0, 0, 0, 0.12) 55%,
+      transparent
+    );
+    animation: tracking-band 13s linear infinite;
+  }
+  @keyframes tracking-band {
+    from { transform: translateY(0); }
+    to   { transform: translateY(140vh); }
   }
 
   /* Warm light pooling at the top of the page. */
@@ -132,13 +174,13 @@
     z-index: 0;
     background: radial-gradient(
       ellipse at center,
-      rgba(217, 155, 82, 0.09) 0%,
-      rgba(217, 155, 82, 0.03) 40%,
+      rgba(255, 180, 94, 0.08) 0%,
+      rgba(255, 180, 94, 0.025) 40%,
       transparent 70%
     );
   }
 
-  /* The corners fall away into dark, like a projected frame. */
+  /* The corners fall away into dark, like a tube's edge. */
   .vignette::before {
     content: '';
     position: fixed;
@@ -147,12 +189,111 @@
     z-index: 55;
     background: radial-gradient(
       ellipse 130% 110% at 50% 42%,
-      transparent 58%,
-      rgba(4, 3, 3, 0.5) 100%
+      transparent 56%,
+      rgba(5, 3, 1, 0.55) 100%
     );
   }
 
-  /* A slow-breathing pool of ember light — the login page's only decoration. */
+  /* -------------------------------------------------------------------
+     The OSD voice. `.osd` is the face; `.osd-burn` is that face burned
+     into footage — white-hot core, amber halo, hard dark offset.
+     ------------------------------------------------------------------- */
+  .osd {
+    font-family: var(--font-osd);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .osd-burn {
+    color: #ffeed2;
+    text-shadow:
+      0 0 1px rgba(255, 238, 210, 0.9),
+      0 0 9px rgba(255, 180, 94, 0.55),
+      1px 1px 0 rgba(20, 10, 0, 0.9);
+  }
+  /* Chromatic aberration for big display text — red/cyan fringe. */
+  .rgb-split {
+    text-shadow:
+      -0.035em 0 rgba(255, 70, 60, 0.5),
+      0.035em 0 rgba(90, 200, 255, 0.38),
+      0 0 0.35em rgba(255, 180, 94, 0.22);
+  }
+  .rgb-split-hover {
+    transition: text-shadow 300ms var(--ease-soft);
+  }
+  .rgb-split-hover:hover {
+    text-shadow:
+      -0.05em 0 rgba(255, 70, 60, 0.65),
+      0.05em 0 rgba(90, 200, 255, 0.5);
+  }
+
+  /* Captions — sharpie on the tape label. */
+  .hand {
+    font-family: var(--font-hand);
+    letter-spacing: 0.01em;
+  }
+
+  /* The blinking record light and its friends. */
+  .rec-dot {
+    display: inline-block;
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 999px;
+    background: var(--color-rec);
+    box-shadow: 0 0 8px rgba(255, 75, 62, 0.8);
+    animation: osd-blink 1.2s steps(1) infinite;
+  }
+  .cursor-blink {
+    animation: osd-blink 1.1s steps(1) infinite;
+  }
+  @keyframes osd-blink {
+    0%, 60% { opacity: 1; }
+    61%, 100% { opacity: 0; }
+  }
+
+  /* Viewfinder corner brackets, drawn with eight background strokes. */
+  .viewfinder {
+    --vf: rgba(244, 234, 214, 0.4);
+    --vf-len: 1.4rem;
+    background:
+      linear-gradient(var(--vf), var(--vf)) top left / var(--vf-len) 2px,
+      linear-gradient(var(--vf), var(--vf)) top left / 2px var(--vf-len),
+      linear-gradient(var(--vf), var(--vf)) top right / var(--vf-len) 2px,
+      linear-gradient(var(--vf), var(--vf)) top right / 2px var(--vf-len),
+      linear-gradient(var(--vf), var(--vf)) bottom left / var(--vf-len) 2px,
+      linear-gradient(var(--vf), var(--vf)) bottom left / 2px var(--vf-len),
+      linear-gradient(var(--vf), var(--vf)) bottom right / var(--vf-len) 2px,
+      linear-gradient(var(--vf), var(--vf)) bottom right / 2px var(--vf-len);
+    background-repeat: no-repeat;
+  }
+
+  /* The occasional horizontal jolt of a tape finding tracking. */
+  .tracking-wobble {
+    animation: tracking-jolt 9s linear infinite;
+  }
+  @keyframes tracking-jolt {
+    0%, 92%, 100% { transform: none; }
+    93.2% { transform: translateX(3px) skewX(-0.7deg); }
+    94.6% { transform: translateX(-4px) skewX(1deg); }
+    96% { transform: translateX(1px) skewX(-0.3deg); }
+  }
+
+  /* VCR blue. The one cold color in the building, reserved for absence. */
+  .no-signal {
+    position: relative;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: linear-gradient(180deg, #12233d 0%, #0b1a30 100%);
+  }
+  .no-signal::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    opacity: 0.1;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* A slow-breathing pool of amber light — the login page's decoration. */
   .ember-orb {
     position: absolute;
     width: 34rem;
@@ -161,8 +302,8 @@
     pointer-events: none;
     background: radial-gradient(
       circle at center,
-      rgba(217, 155, 82, 0.22) 0%,
-      rgba(217, 155, 82, 0.07) 45%,
+      rgba(255, 180, 94, 0.2) 0%,
+      rgba(255, 180, 94, 0.06) 45%,
       transparent 70%
     );
     filter: blur(12px);
@@ -183,38 +324,41 @@
   .card {
     background: var(--color-ink-raised);
     border: 1px solid var(--color-edge);
-    border-radius: 1.25rem;
+    border-radius: 0.75rem;
   }
 
+  /* Buttons are VCR controls: squared plastic, OSD lettering. */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    border-radius: 999px;
-    padding: 0.75rem 1.5rem;
-    font-size: 0.9375rem;
-    font-weight: 500;
-    transition: all 220ms var(--ease-soft);
+    border-radius: 0.55rem;
+    padding: 0.72rem 1.4rem;
+    font-family: var(--font-osd);
+    font-size: 1.05rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    transition: all 200ms var(--ease-soft);
     cursor: pointer;
     border: 1px solid transparent;
   }
 
   .btn-primary {
-    background: linear-gradient(160deg, var(--color-ember-soft) -40%, var(--color-ember) 55%);
-    color: #1a1105;
-    font-weight: 600;
-    /* Lamplight spilling off the button — this is what sells "warm". */
+    background: linear-gradient(170deg, var(--color-ember-soft) -35%, var(--color-ember) 60%);
+    color: #221302;
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.25) inset,
-      0 10px 34px -10px rgba(217, 155, 82, 0.55);
+      0 1px 0 rgba(255, 255, 255, 0.3) inset,
+      0 -2px 0 rgba(120, 70, 10, 0.35) inset,
+      0 10px 34px -10px rgba(255, 180, 94, 0.55);
   }
   .btn-primary:hover:not(:disabled) {
     background: var(--color-ember-soft);
     transform: translateY(-1px);
     box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.3) inset,
-      0 14px 44px -10px rgba(217, 155, 82, 0.7);
+      0 1px 0 rgba(255, 255, 255, 0.35) inset,
+      0 -2px 0 rgba(120, 70, 10, 0.3) inset,
+      0 14px 44px -10px rgba(255, 180, 94, 0.7);
   }
   .btn-primary:active:not(:disabled) {
     transform: translateY(0);
@@ -240,7 +384,7 @@
     width: 100%;
     background: var(--color-ink-high);
     border: 1px solid var(--color-edge);
-    border-radius: 0.875rem;
+    border-radius: 0.55rem;
     padding: 0.875rem 1.125rem;
     transition: border-color 200ms var(--ease-soft);
   }
@@ -267,12 +411,15 @@
     flex: 0 0 auto;
   }
 
+  /* Section labels speak OSD now — every page inherits this voice. */
   .eyebrow {
-    font-size: 0.6875rem;
+    font-family: var(--font-osd);
+    font-size: 0.95rem;
     line-height: 1.2;
-    letter-spacing: 0.28em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--color-paper-faint);
+    color: var(--color-ember);
+    text-shadow: 0 0 10px rgba(255, 180, 94, 0.35);
   }
 
   .movie-invitation {
@@ -280,19 +427,22 @@
     width: fit-content;
     min-height: 3.5rem;
     align-items: center;
-    gap: 0.875rem;
+    gap: 0.9rem;
     border: 1px solid var(--color-edge-strong);
-    border-radius: 999px;
-    padding: 0.45rem 1.15rem 0.45rem 0.45rem;
+    border-radius: 0.7rem;
+    padding: 0.5rem 1.2rem 0.5rem 0.5rem;
+    background: rgba(22, 16, 9, 0.6);
     transition:
       background-color 220ms var(--ease-soft),
       border-color 220ms var(--ease-soft),
-      transform 220ms var(--ease-soft);
+      transform 220ms var(--ease-soft),
+      box-shadow 220ms var(--ease-soft);
   }
   .movie-invitation:hover {
-    border-color: rgba(217, 155, 82, 0.42);
+    border-color: rgba(255, 180, 94, 0.5);
     background: var(--color-ink-raised);
     transform: translateY(-1px);
+    box-shadow: 0 14px 40px -18px rgba(255, 180, 94, 0.45);
   }
 
   .editorial-feed {
@@ -310,7 +460,7 @@
     margin-top: clamp(4rem, 10vw, 7rem);
   }
   .featured-memory > button {
-    box-shadow: 0 36px 100px -54px rgba(217, 155, 82, 0.32);
+    box-shadow: 0 36px 100px -54px rgba(255, 180, 94, 0.35);
   }
 
   .collection-shelf {
@@ -330,14 +480,15 @@
     flex: 0 0 min(76vw, 18.5rem);
     scroll-snap-align: start;
   }
+  /* No cover art? The deck shows blue. */
   .collection-fallback {
     position: absolute;
     inset: 0;
     display: grid;
     place-items: center;
     overflow: hidden;
-    color: rgba(247, 242, 233, 0.18);
-    background-color: var(--color-ink-high);
+    color: rgba(220, 232, 250, 0.28);
+    background: linear-gradient(180deg, #12233d 0%, #0b1a30 100%);
   }
   .collection-fallback::before,
   .collection-fallback::after {
@@ -346,19 +497,19 @@
     top: 1rem;
     bottom: 1rem;
     width: 0.35rem;
-    border-top: 0.55rem dotted rgba(247, 242, 233, 0.12);
-    border-bottom: 0.55rem dotted rgba(247, 242, 233, 0.12);
+    border-top: 0.55rem dotted rgba(220, 232, 250, 0.14);
+    border-bottom: 0.55rem dotted rgba(220, 232, 250, 0.14);
   }
   .collection-fallback::before { left: 1rem; }
   .collection-fallback::after { right: 1rem; }
   .collection-fallback span {
     max-width: 90%;
     overflow: hidden;
-    font-family: var(--font-display);
+    font-family: var(--font-osd);
     font-size: clamp(4.5rem, 18vw, 8rem);
     line-height: 1;
-    letter-spacing: -0.06em;
     white-space: nowrap;
+    text-transform: uppercase;
   }
 
   .settings-index {
@@ -371,9 +522,9 @@
     gap: 0.25rem;
     overflow-x: auto;
     border: 1px solid var(--color-edge-strong);
-    border-radius: 999px;
+    border-radius: 0.8rem;
     padding: 0.35rem;
-    background: rgba(19, 17, 16, 0.96);
+    background: rgba(22, 16, 9, 0.96);
     box-shadow: 0 16px 48px -24px rgba(0, 0, 0, 0.95);
     scrollbar-width: none;
   }
@@ -384,9 +535,12 @@
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    border-radius: 999px;
+    border-radius: 0.55rem;
     padding-inline: 1rem;
-    font-size: 0.8125rem;
+    font-family: var(--font-osd);
+    font-size: 0.95rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     color: var(--color-paper-dim);
     transition: all 200ms var(--ease-soft);
   }
@@ -397,8 +551,8 @@
   }
   .settings-panel {
     border: 1px solid var(--color-edge);
-    border-radius: 1.5rem;
-    background: rgba(19, 17, 16, 0.62);
+    border-radius: 0.9rem;
+    background: rgba(22, 16, 9, 0.62);
     padding: clamp(1.25rem, 4vw, 2.5rem);
   }
 }
@@ -408,19 +562,28 @@
     text-wrap: balance;
   }
 
-  /* Entrances. Staggered by inline animation-delay at the call site. */
+  /* Entrances resolve like a tape finding tracking: a couple of horizontal
+     over-corrections on the way in, not a polite fade. Transform+opacity only. */
   @keyframes rise {
-    from {
+    0% {
       opacity: 0;
-      transform: translateY(14px);
+      transform: translate(-7px, 12px) skewX(1.4deg);
     }
-    to {
+    35% {
+      opacity: 0.75;
+      transform: translate(4px, 5px) skewX(-0.8deg);
+    }
+    60% {
+      opacity: 0.94;
+      transform: translate(-1px, 1px) skewX(0.25deg);
+    }
+    100% {
       opacity: 1;
       transform: none;
     }
   }
   .animate-rise {
-    animation: rise 700ms var(--ease-cinema) both;
+    animation: rise 640ms var(--ease-cinema) both;
   }
 
   @keyframes fade {
@@ -466,20 +629,24 @@
     animation: breathe 2.4s ease-in-out infinite;
   }
 
-  /* Loading placeholder — a slow warm sweep, not a spinner. */
-  @keyframes sweep {
-    from { background-position: -220% 0; }
-    to   { background-position: 320% 0; }
+  /* Loading placeholder — signal static settling, not a spinner. Noise tile
+     with a pulsing warm wash; opacity-only so it stays cheap. */
+  @keyframes static-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.85; }
   }
   .animate-sweep {
-    background-image: linear-gradient(
-      100deg,
-      var(--color-ink-raised) 30%,
-      var(--color-ink-hover) 50%,
-      var(--color-ink-raised) 70%
-    );
-    background-size: 220% 100%;
-    animation: sweep 2.2s ease-in-out infinite;
+    position: relative;
+    background-color: var(--color-ink-high);
+    overflow: hidden;
+  }
+  .animate-sweep::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.14;
+    animation: static-pulse 1.6s ease-in-out infinite;
   }
 
   .hide-scrollbar {
@@ -489,14 +656,13 @@
     display: none;
   }
 
-  /* Huge ghost numerals marking where one year gives way to the next. */
+  /* Rewind markers where one year gives way to the next. */
   .year-ghost {
-    font-family: var(--font-display);
-    font-size: clamp(5rem, 18vw, 11rem);
-    line-height: 0.8;
-    letter-spacing: -0.04em;
-    color: transparent;
-    -webkit-text-stroke: 1px rgba(247, 242, 233, 0.14);
+    font-family: var(--font-osd);
+    font-size: clamp(4.25rem, 16vw, 9.5rem);
+    line-height: 0.85;
+    color: rgba(255, 180, 94, 0.16);
+    text-shadow: 0 0 24px rgba(255, 180, 94, 0.12);
     user-select: none;
   }
 }
@@ -516,6 +682,11 @@
     animation: none !important;
     transform: scale(1.04) !important;
   }
+  .crt-overlay::after,
+  .rec-dot,
+  .cursor-blink {
+    animation: none !important;
+  }
 }
 
 @media (max-width: 639px) {
@@ -527,6 +698,16 @@
   }
   .settings-index {
     width: calc(100vw - 2.5rem);
+  }
+  /* 2px-period scanlines shimmer on dense phone screens; widen and soften. */
+  .crt-overlay {
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.1) 0px,
+      rgba(0, 0, 0, 0.1) 1px,
+      transparent 1px,
+      transparent 4px
+    );
   }
 }
 

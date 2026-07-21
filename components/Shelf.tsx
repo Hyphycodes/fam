@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { duration, warmDate } from '@/lib/format'
+import { duration, osdDate } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
 /**
@@ -26,19 +26,15 @@ export function Shelf({
       {!hideHeading && (
         <div className="mb-6 flex items-baseline justify-between gap-4">
           <div>
-            {subtitle && (
-              <p className="mb-1 text-xs tracking-[0.2em] text-paper-faint uppercase">
-                {subtitle}
-              </p>
-            )}
-            <h2 className="font-display text-title leading-none text-balance">{title}</h2>
+            {subtitle && <p className="eyebrow mb-1.5">{subtitle}</p>}
+            <h2 className="osd rgb-split text-title leading-none text-balance">{title}</h2>
           </div>
           {href && (
             <Link
               href={href}
-              className="shrink-0 text-sm text-paper-dim transition-colors hover:text-paper"
+              className="osd shrink-0 text-base text-paper-dim transition-colors hover:text-paper"
             >
-              See all
+              See all ▸
             </Link>
           )}
         </div>
@@ -51,7 +47,7 @@ export function Shelf({
             href={`/m/${media.id}`}
             className="group w-[72vw] max-w-64 sm:w-72 sm:max-w-none"
           >
-            <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-ink-raised">
+            <div className="relative aspect-[4/5] overflow-hidden rounded-md bg-ink-raised ring-1 ring-edge ring-inset">
               {media.thumb_url ? (
                 <img
                   src={media.thumb_url}
@@ -70,16 +66,19 @@ export function Shelf({
               )}
 
               {media.type === 'video' && (
-                <span className="absolute bottom-3 left-3 rounded-full bg-ink/70 px-2.5 py-1 text-[11px] text-paper backdrop-blur">
-                  ▶ {duration(media.duration_seconds) || 'Video'}
+                <span className="osd osd-burn absolute top-3 left-3 text-sm">
+                  ▶ PLAY {duration(media.duration_seconds)}
                 </span>
               )}
+
+              <span className="osd osd-burn absolute bottom-3 left-3 text-sm">
+                {osdDate(media.taken_at)}
+              </span>
             </div>
 
-            <p className="mt-3 truncate text-sm text-paper-soft">
+            <p className="hand mt-2.5 truncate text-xl leading-tight text-paper-soft">
               {media.caption || media.uploader_name}
             </p>
-            <p className="text-xs text-paper-faint">{warmDate(media.taken_at)}</p>
           </Link>
         ))}
       </div>

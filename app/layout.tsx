@@ -1,14 +1,21 @@
 import type { Metadata, Viewport } from 'next'
-import { Instrument_Serif, Inter } from 'next/font/google'
+import { Caveat, Inter, VT323 } from 'next/font/google'
 import { ServiceWorker } from '@/components/ServiceWorker'
 import { appName } from '@/lib/env'
 import './globals.css'
 
-const displaySerif = Instrument_Serif({
+// The camcorder's on-screen display — dates, counts, controls, headlines.
+const osdPixel = VT323({
   weight: '400',
   subsets: ['latin'],
-  style: ['normal', 'italic'],
-  variable: '--font-display-serif',
+  variable: '--font-osd-pixel',
+  display: 'swap',
+})
+
+// Marker on the tape label — captions written by a human hand.
+const handScript = Caveat({
+  subsets: ['latin'],
+  variable: '--font-hand-script',
   display: 'swap',
 })
 
@@ -30,7 +37,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#0a0908',
+  themeColor: '#0d0a06',
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
@@ -38,9 +45,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${displaySerif.variable} ${bodySans.variable}`}>
+    <html lang="en" className={`${osdPixel.variable} ${handScript.variable} ${bodySans.variable}`}>
       <body className="grain vignette min-h-dvh bg-ink text-paper antialiased">
         {children}
+        <div className="crt-overlay" aria-hidden="true" />
         <ServiceWorker />
       </body>
     </html>
