@@ -22,11 +22,22 @@ export default async function LoginPage({
   const { next, error } = await searchParams
 
   return (
-    <main className="lamplight relative flex min-h-dvh flex-col justify-center px-6 py-20">
-      <div className="mx-auto w-full max-w-sm">
-        <h1 className="font-display text-display leading-[0.9]">{appName}</h1>
-        <p className="mt-5 text-lg text-paper-soft text-balance">
-          Everything we&rsquo;ve been meaning to put somewhere. Just us.
+    <main className="lamplight relative flex min-h-dvh flex-col justify-center overflow-hidden px-6 py-20">
+      {/* A slow pool of lamplight behind the form — alive, not animated-at-you. */}
+      <div className="ember-orb -top-40 right-[-12rem]" aria-hidden />
+      <div className="ember-orb bottom-[-16rem] left-[-14rem] [animation-delay:-7s]" aria-hidden />
+
+      <div className="relative mx-auto w-full max-w-sm">
+        <p className="mb-5 text-[11px] tracking-[0.4em] text-paper-faint uppercase">
+          The family archive
+        </p>
+        <h1 className="font-display text-[clamp(4rem,16vw,6rem)] leading-[0.85]">
+          {appName}
+          <span className="text-ember">.</span>
+        </h1>
+        <p className="mt-6 text-lg text-paper-soft text-balance">
+          Everything we&rsquo;ve been meaning to put somewhere.{' '}
+          <span className="font-display text-xl text-paper italic">Just us.</span>
         </p>
 
         {error && ERRORS[error] && (

@@ -5,8 +5,9 @@ import { Shell } from '@/components/Shell'
 import { Shelf } from '@/components/Shelf'
 import { AddMemoriesButton } from '@/components/AddMemories'
 import { requireSession } from '@/lib/auth'
-import { isConfigured } from '@/lib/env'
-import { getFeed, getOnThisDay } from '@/lib/queries'
+import { appName, isConfigured } from '@/lib/env'
+import { getFeed, getOnThisDay, getYears } from '@/lib/queries'
+import { reconcileProcessingVideos } from '@/lib/reconcile'
 import { createClient } from '@/lib/supabase/server'
 import { isRecent, yearsAgo } from '@/lib/format'
 
@@ -18,18 +19,38 @@ export default async function HomePage() {
   const session = await requireSession()
   const db = await createClient()
 
-  const [media, onThisDay] = await Promise.all([getFeed(db, { limit: 12 }), getOnThisDay(db)])
+  // Catch any video whose uploader closed the tab before Cloudflare finished —
+  // without this, a transcoded video could sit invisible forever.
+  await reconcileProcessingVideos()
+
+  const [media, onThisDay, years] = await Promise.all([
+    getFeed(db, { limit: 12 }),
+    getOnThisDay(db),
+    getYears(db),
+  ])
 
   // Someone who joined in the last few minutes gets a hello rather than being
   // dropped straight into a stranger's photo feed.
   const justArrived = isRecent(session.profile.created_at, 15 * 60 * 1000)
 
+  const total = years.reduce((sum, y) => sum + y.count, 0)
+  const span =
+    years.length > 1
+      ? `${years[years.length - 1].year} — ${years[0].year}`
+      : years.length === 1
+        ? String(years[0].year)
+        : null
+
   return (
     <Shell session={session}>
       {justArrived && media.length > 0 && <Welcome name={session.profile.display_name} />}
 
+      {media.length > 0 && !justArrived && (
+        <Masthead total={total} span={span} />
+      )}
+
       {onThisDay.length > 0 && (
-        <section className="mt-10 mb-20">
+        <section className="mt-4 mb-24">
           <Shelf
             title={onThisDayTitle(onThisDay[0].taken_at)}
             subtitle="On this day"
@@ -38,9 +59,14 @@ export default async function HomePage() {
         </section>
       )}
 
-      <section className="mt-10">
+      <section>
         {media.length > 0 && (
-          <h2 className="mb-10 font-display text-title text-balance">Recently added</h2>
+          <div className="mb-12 flex items-baseline justify-between border-b border-edge pb-5">
+            <h2 className="font-display text-3xl text-balance italic">Recently added</h2>
+            <span className="text-xs tracking-[0.25em] text-paper-faint uppercase">
+              Newest first
+            </span>
+          </div>
         )}
 
         <Feed
@@ -50,6 +76,30 @@ export default async function HomePage() {
         />
       </section>
     </Shell>
+  )
+}
+
+/** The archive announcing itself: name, count, and the years it spans. */
+function Masthead({ total, span }: { total: number; span: string | null }) {
+  return (
+    <section className="mt-8 mb-16 animate-rise">
+      <p className="mb-3 text-[11px] tracking-[0.4em] text-paper-faint uppercase">
+        The family archive
+      </p>
+      <h1 className="font-display text-[clamp(3.5rem,10vw,7rem)] leading-[0.85] text-balance">
+        {appName}
+        <span className="text-ember">.</span>
+      </h1>
+      <p className="mt-5 text-sm text-paper-dim">
+        {total} {total === 1 ? 'memory' : 'memories'}
+        {span && (
+          <>
+            <span className="mx-2.5 text-paper-faint">·</span>
+            <span className="tracking-wide">{span}</span>
+          </>
+        )}
+      </p>
+    </section>
   )
 }
 

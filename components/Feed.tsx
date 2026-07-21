@@ -80,12 +80,21 @@ export function Feed({
     <>
       <div className="space-y-16 sm:space-y-24">
         {items.map((media, index) => (
-          <MemoryCard
-            key={media.id}
-            media={media}
-            priority={index < 2}
-            onOpen={() => setOpen(index)}
-          />
+          <div key={media.id}>
+            {/* A huge ghost numeral where one year gives way to the next —
+                scrolling the feed becomes scrolling back through time. */}
+            {index > 0 && items[index - 1].taken_year !== media.taken_year && (
+              <div className="mb-16 flex items-center gap-6 sm:mb-24">
+                <span className="year-ghost">{media.taken_year}</span>
+                <span className="h-px flex-1 bg-edge" />
+              </div>
+            )}
+            <MemoryCard
+              media={media}
+              priority={index < 2}
+              onOpen={() => setOpen(index)}
+            />
+          </div>
         ))}
       </div>
 
@@ -130,7 +139,7 @@ function MemoryCard({
     <article className="animate-rise">
       <button
         onClick={onOpen}
-        className="group relative block w-full overflow-hidden rounded-2xl bg-ink-raised"
+        className="group relative block w-full overflow-hidden rounded-3xl bg-ink-raised ring-1 ring-edge transition-shadow duration-500 ring-inset hover:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.9)] hover:ring-edge-strong"
         style={{ aspectRatio: `${Math.min(Math.max(ratio, 0.6), 2.2)}` }}
       >
         {media.thumb_url || media.display_url ? (
@@ -140,20 +149,31 @@ function MemoryCard({
             loading={priority ? 'eager' : 'lazy'}
             decoding="async"
             fetchPriority={priority ? 'high' : 'auto'}
-            className="h-full w-full object-cover transition-transform duration-[1200ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.02]"
+            className="h-full w-full object-cover transition-transform duration-[1400ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
           />
         ) : (
           <div className="h-full w-full animate-sweep" />
         )}
 
+        {/* A breath of dark at the base so badges always sit on something. */}
+        <div className="absolute inset-0 bg-gradient-to-t from-ink/40 via-transparent to-transparent opacity-80 transition-opacity duration-500 group-hover:opacity-100" />
+
         {media.type === 'video' && (
-          <>
-            <div className="absolute inset-0 bg-gradient-to-t from-ink/50 via-transparent to-transparent" />
-            <span className="absolute bottom-4 left-4 flex items-center gap-2 rounded-full bg-ink/70 px-3 py-1.5 text-xs text-paper backdrop-blur">
-              <span className="text-[10px]">▶</span>
-              {duration(media.duration_seconds) || 'Video'}
+          <span className="absolute bottom-5 left-5 flex items-center gap-2.5 rounded-full border border-white/10 bg-ink/75 px-4 py-2 text-xs text-paper backdrop-blur-md transition-transform duration-500 group-hover:scale-105">
+            <span className="grid h-5 w-5 place-items-center rounded-full bg-ember text-[9px] text-[#1a1105]">
+              ▶
             </span>
-          </>
+            {duration(media.duration_seconds) || 'Video'}
+          </span>
+        )}
+
+        {media.favorite && (
+          <span
+            className="absolute top-5 right-5 text-ember drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]"
+            title="One of the good ones"
+          >
+            ★
+          </span>
         )}
       </button>
 

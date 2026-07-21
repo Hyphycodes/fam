@@ -39,7 +39,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${displaySerif.variable} ${bodySans.variable}`}>
-      <body className="grain min-h-dvh bg-ink text-paper antialiased">
+      <body className="grain vignette min-h-dvh bg-ink text-paper antialiased">
         {children}
         <ServiceWorker />
       </body>

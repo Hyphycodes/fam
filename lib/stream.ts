@@ -179,7 +179,12 @@ function signingKey() {
  * rather than a generic JWT library's output. Returns null when no signing key
  * is configured, which is the "videos are public by UID" mode.
  */
-export function signPlaybackToken(uid: string, ttlSeconds = 60 * 60 * 2): string | null {
+/**
+ * 12 hours, not 2: Movie Mode runs unattended on a projector all evening, and
+ * a video that 403s three hours into the cookout is the worst possible way to
+ * find out tokens expire. (Stream caps validity at 24h.)
+ */
+export function signPlaybackToken(uid: string, ttlSeconds = 60 * 60 * 12): string | null {
   const key = signingKey()
   if (!key) return null
   const { privateKey } = key

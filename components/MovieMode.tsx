@@ -215,6 +215,10 @@ export function MovieMode({
     return (
       <StartScreen
         count={media.length}
+        thumbs={media
+          .map((m) => m.thumb_url)
+          .filter((url): url is string => Boolean(url))
+          .slice(0, 12)}
         flavors={flavors}
         flavor={flavor}
         quiet={quiet}
@@ -347,6 +351,7 @@ function Frame({
 
 function StartScreen({
   count,
+  thumbs,
   flavors,
   flavor,
   quiet,
@@ -356,6 +361,7 @@ function StartScreen({
   onStart,
 }: {
   count: number
+  thumbs: string[]
   flavors: Flavor[]
   flavor: Flavor
   quiet: boolean
@@ -365,8 +371,27 @@ function StartScreen({
   onStart: () => void
 }) {
   return (
-    <div className="lamplight relative flex min-h-dvh flex-col justify-center px-6 py-20 sm:px-12">
-      <div className="mx-auto w-full max-w-3xl">
+    <div className="lamplight relative flex min-h-dvh flex-col justify-center overflow-hidden px-6 py-20 sm:px-12">
+      {/* The family's own memories, dimmed to a murmur behind the marquee —
+          like standing in the projection booth before the show. */}
+      {thumbs.length >= 4 && (
+        <div className="absolute inset-0" aria-hidden>
+          <div className="grid h-full w-full grid-cols-3 gap-2 opacity-[0.13] blur-[2px] saturate-[0.7] sm:grid-cols-4">
+            {thumbs.map((url, index) => (
+              <img
+                key={`${url.slice(0, 80)}-${index}`}
+                src={url}
+                alt=""
+                className="h-full w-full object-cover"
+                style={{ transform: index % 2 ? 'scale(1.06)' : undefined }}
+              />
+            ))}
+          </div>
+          <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/60 to-ink/80" />
+        </div>
+      )}
+
+      <div className="relative mx-auto w-full max-w-3xl">
         <p className="mb-4 text-xs tracking-[0.35em] text-paper-faint uppercase">Movie mode</p>
         <h1 className="font-display text-[clamp(3rem,11vw,7rem)] leading-[0.9] text-balance">
           Put it on

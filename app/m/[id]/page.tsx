@@ -6,9 +6,11 @@ import { Reactions } from '@/components/Reactions'
 import { Comments } from '@/components/Comments'
 import { VoiceNotes } from '@/components/VoiceNotes'
 import { MemoryEditor } from '@/components/MemoryEditor'
+import { ProcessingWatcher } from '@/components/ProcessingWatcher'
 import { requireSession } from '@/lib/auth'
 import { isConfigured } from '@/lib/env'
 import { getEvents, getMediaById } from '@/lib/queries'
+import { reconcileProcessingVideos } from '@/lib/reconcile'
 import { createClient } from '@/lib/supabase/server'
 import { fileSize, fullDate } from '@/lib/format'
 
@@ -25,6 +27,10 @@ export default async function MemoryPage({
   const { id } = await params
   const db = await createClient()
 
+  // If this video finished transcoding after its uploader closed the tab, this
+  // is the moment it gets marked ready.
+  await reconcileProcessingVideos()
+
   const [media, events] = await Promise.all([getMediaById(db, id), getEvents(db)])
   if (!media) notFound()
 
@@ -34,6 +40,9 @@ export default async function MemoryPage({
   return (
     <Shell session={session}>
       <article className="mt-6">
+        {/* Refreshes this page the moment Cloudflare finishes the transcode. */}
+        {media.status === 'processing' && <ProcessingWatcher mediaId={media.id} />}
+
         <div className="overflow-hidden rounded-2xl bg-ink-raised">
           {media.status === 'processing' ? (
             <Processing />

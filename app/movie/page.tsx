@@ -3,6 +3,7 @@ import { MovieMode, type Flavor } from '@/components/MovieMode'
 import { requireSession } from '@/lib/auth'
 import { isConfigured } from '@/lib/env'
 import { getEvents, getFeed, getPeople, getYears } from '@/lib/queries'
+import { reconcileProcessingVideos } from '@/lib/reconcile'
 import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -10,6 +11,8 @@ export const dynamic = 'force-dynamic'
 export default async function MoviePage() {
   if (!isConfigured('supabase')) redirect('/setup')
   await requireSession()
+
+  await reconcileProcessingVideos()
 
   const db = await createClient()
   const [media, events, people, years] = await Promise.all([

@@ -136,6 +136,48 @@
     );
   }
 
+  /* The corners fall away into dark, like a projected frame. */
+  .vignette::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 55;
+    background: radial-gradient(
+      ellipse 130% 110% at 50% 42%,
+      transparent 58%,
+      rgba(4, 3, 3, 0.5) 100%
+    );
+  }
+
+  /* A slow-breathing pool of ember light — the login page's only decoration. */
+  .ember-orb {
+    position: absolute;
+    width: 34rem;
+    height: 34rem;
+    border-radius: 999px;
+    pointer-events: none;
+    background: radial-gradient(
+      circle at center,
+      rgba(217, 155, 82, 0.22) 0%,
+      rgba(217, 155, 82, 0.07) 45%,
+      transparent 70%
+    );
+    filter: blur(12px);
+    animation: orb-drift 14s ease-in-out infinite alternate;
+  }
+
+  @keyframes orb-drift {
+    from {
+      transform: translate(-6%, -4%) scale(1);
+      opacity: 0.8;
+    }
+    to {
+      transform: translate(6%, 5%) scale(1.15);
+      opacity: 1;
+    }
+  }
+
   .card {
     background: var(--color-ink-raised);
     border: 1px solid var(--color-edge);
@@ -157,13 +199,23 @@
   }
 
   .btn-primary {
-    background: var(--color-ember);
+    background: linear-gradient(160deg, var(--color-ember-soft) -40%, var(--color-ember) 55%);
     color: #1a1105;
     font-weight: 600;
+    /* Lamplight spilling off the button — this is what sells "warm". */
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.25) inset,
+      0 10px 34px -10px rgba(217, 155, 82, 0.55);
   }
   .btn-primary:hover:not(:disabled) {
     background: var(--color-ember-soft);
     transform: translateY(-1px);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.3) inset,
+      0 14px 44px -10px rgba(217, 155, 82, 0.7);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
   }
 
   .btn-ghost {
@@ -298,6 +350,17 @@
   }
   .hide-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Huge ghost numerals marking where one year gives way to the next. */
+  .year-ghost {
+    font-family: var(--font-display);
+    font-size: clamp(5rem, 18vw, 11rem);
+    line-height: 0.8;
+    letter-spacing: -0.04em;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(247, 242, 233, 0.14);
+    user-select: none;
   }
 }
 

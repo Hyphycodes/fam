@@ -78,6 +78,11 @@ export function presignPut(
   )
 }
 
+/**
+ * Default expiry is 12 hours — long enough that a tab left open all evening
+ * (Movie Mode on the projector, the feed on someone's iPad) never watches its
+ * own images 403. Still short enough that a leaked link goes stale by morning.
+ */
 export function presignGet(
   key: string,
   opts: { expiresIn?: number; downloadAs?: string } = {},
@@ -95,14 +100,14 @@ export function presignGet(
           }
         : {}),
     }),
-    { expiresIn: opts.expiresIn ?? 60 * 60 },
+    { expiresIn: opts.expiresIn ?? 60 * 60 * 12 },
   )
 }
 
 /** Signs a batch of keys concurrently, tolerating nulls for a cleaner call site. */
 export async function presignMany(
   keys: (string | null | undefined)[],
-  expiresIn = 60 * 60,
+  expiresIn = 60 * 60 * 12,
 ): Promise<(string | null)[]> {
   return Promise.all(
     keys.map((key) => (key ? presignGet(key, { expiresIn }) : Promise.resolve(null))),
