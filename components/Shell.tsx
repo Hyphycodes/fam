@@ -19,8 +19,8 @@ export function Shell({
 }) {
   return (
     <div className="lamplight relative min-h-dvh">
-      <header className="relative z-10 mx-auto flex max-w-5xl items-center justify-between px-6 pt-7 pb-2">
-        <Link href="/" className="group flex items-baseline gap-1">
+      <header className="relative z-10 mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 pt-[max(1.25rem,env(safe-area-inset-top))] pb-2 sm:px-6 sm:pt-7">
+        <Link href="/" className="group flex min-h-11 items-center gap-1" aria-label={`${appName} home`}>
           <span className="font-display text-2xl tracking-tight text-paper italic transition-colors group-hover:text-ember">
             {appName}
           </span>
@@ -28,16 +28,17 @@ export function Shell({
         </Link>
         <Link
           href="/settings"
-          className="flex items-center gap-2.5 rounded-full border border-transparent px-3 py-1.5 text-sm text-paper-dim transition-all hover:border-edge hover:bg-ink-raised hover:text-paper"
+          aria-label={`Open settings for ${session.profile.display_name}`}
+          className="flex min-h-11 min-w-11 max-w-[62%] items-center justify-end gap-2.5 rounded-full border border-transparent px-2 py-1.5 text-sm text-paper-dim transition-all hover:border-edge hover:bg-ink-raised hover:text-paper sm:px-3"
         >
           <span className="grid h-6 w-6 place-items-center rounded-full bg-ember-deep/40 font-display text-xs text-ember-soft">
             {session.profile.display_name.charAt(0).toUpperCase()}
           </span>
-          {session.profile.display_name}
+          <span className="hidden truncate sm:block">{session.profile.display_name}</span>
         </Link>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-5xl px-6 pb-40">{children}</main>
+      <main className="relative z-10 mx-auto max-w-5xl px-5 pb-36 sm:px-6 sm:pb-40">{children}</main>
 
       <Nav isOwner={session.profile.role === 'owner'} />
     </div>

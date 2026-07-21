@@ -144,7 +144,12 @@ export async function getPeople(db: DB): Promise<(Person & { media_count: number
   const rows = (people ?? []) as Person[]
   if (rows.length === 0) return []
 
-  const { data: links } = await db.from('media_people').select('person_id')
+  // Counts should describe memories a family member can actually open. Tags on
+  // an upload that is still processing (or failed) must not inflate Browse.
+  const { data: links } = await db
+    .from('media_people')
+    .select('person_id, media!inner(status)')
+    .eq('media.status', 'ready')
   const tally = new Map<string, number>()
   for (const link of (links ?? []) as { person_id: string }[]) {
     tally.set(link.person_id, (tally.get(link.person_id) ?? 0) + 1)
@@ -162,6 +167,128 @@ export async function getYears(db: DB): Promise<{ year: number; count: number }[
   return [...tally.entries()]
     .map(([year, count]) => ({ year, count }))
     .sort((a, b) => b.year - a.year)
+}
+
+/**
+ * One real frame for each Browse collection.
+ *
+ * We select only ids while deciding which frame represents a collection, then
+ * hydrate the small set of winners. That keeps signed-URL work proportional to
+ * the number of collection cards rather than the size of the archive.
+ */
+export async function getBrowseCovers(
+  db: DB,
+  collections: {
+    people: { id: string }[]
+    events: Pick<EventRow, 'id' | 'cover_media_id'>[]
+    years: { year: number }[]
+  },
+): Promise<{
+  people: Map<string, MediaView>
+  events: Map<string, MediaView>
+  years: Map<number, MediaView>
+}> {
+  const empty = {
+    people: new Map<string, MediaView>(),
+    events: new Map<string, MediaView>(),
+    years: new Map<number, MediaView>(),
+  }
+
+  if (
+    collections.people.length === 0 &&
+    collections.events.length === 0 &&
+    collections.years.length === 0
+  ) {
+    return empty
+  }
+
+  // Two thousand compact rows covers an archive far larger than the UI loads
+  // at once without presigning thousands of private assets.
+  const { data: candidateData } = await db
+    .from('media')
+    .select('id, event_id, taken_year, created_at')
+    .eq('status', 'ready')
+    .order('created_at', { ascending: false })
+    .limit(2000)
+
+  const candidates = (candidateData ?? []) as {
+    id: string
+    event_id: string | null
+    taken_year: number
+    created_at: string
+  }[]
+  if (candidates.length === 0) return empty
+
+  const personIds = new Set(collections.people.map((person) => person.id))
+  const candidateIds = new Set(candidates.map((media) => media.id))
+  const { data: tagData } = collections.people.length
+    ? await db
+        .from('media_people')
+        .select('media_id, person_id')
+        .in('person_id', [...personIds])
+    : { data: [] }
+
+  const peopleByMedia = new Map<string, string[]>()
+  for (const tag of (tagData ?? []) as { media_id: string; person_id: string }[]) {
+    if (!candidateIds.has(tag.media_id)) continue
+    peopleByMedia.set(tag.media_id, [
+      ...(peopleByMedia.get(tag.media_id) ?? []),
+      tag.person_id,
+    ])
+  }
+
+  const personCoverIds = new Map<string, string>()
+  const eventCoverIds = new Map<string, string>()
+  const yearCoverIds = new Map<number, string>()
+
+  // A deliberately chosen event cover wins. Other collections use their most
+  // recently added real memory, which is predictable and easy to understand.
+  for (const event of collections.events) {
+    if (event.cover_media_id) eventCoverIds.set(event.id, event.cover_media_id)
+  }
+
+  for (const media of candidates) {
+    if (media.event_id && !eventCoverIds.has(media.event_id)) {
+      eventCoverIds.set(media.event_id, media.id)
+    }
+    if (!yearCoverIds.has(media.taken_year)) yearCoverIds.set(media.taken_year, media.id)
+    for (const personId of peopleByMedia.get(media.id) ?? []) {
+      if (!personCoverIds.has(personId)) personCoverIds.set(personId, media.id)
+    }
+  }
+
+  const coverIds = [
+    ...new Set([
+      ...personCoverIds.values(),
+      ...eventCoverIds.values(),
+      ...yearCoverIds.values(),
+    ]),
+  ]
+  if (coverIds.length === 0) return empty
+
+  const { data: coverRows } = await db
+    .from('media')
+    .select('*')
+    .eq('status', 'ready')
+    .in('id', coverIds)
+
+  const views = await hydrate(db, (coverRows ?? []) as MediaRow[])
+  const byId = new Map(views.map((view) => [view.id, view]))
+
+  for (const [personId, mediaId] of personCoverIds) {
+    const view = byId.get(mediaId)
+    if (view) empty.people.set(personId, view)
+  }
+  for (const [eventId, mediaId] of eventCoverIds) {
+    const view = byId.get(mediaId)
+    if (view) empty.events.set(eventId, view)
+  }
+  for (const [year, mediaId] of yearCoverIds) {
+    const view = byId.get(mediaId)
+    if (view) empty.years.set(year, view)
+  }
+
+  return empty
 }
 
 // ---------------------------------------------------------------------------

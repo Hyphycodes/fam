@@ -67,9 +67,21 @@ export function AddMemoriesButton({
         <button
           onClick={pick}
           aria-label="Add memories"
-          className="mx-1 flex h-11 w-11 items-center justify-center rounded-full bg-ember text-2xl leading-none font-light text-[#1a1105] transition-transform hover:scale-105 active:scale-95"
+          className="dock-add mx-0.5 flex h-[3.65rem] w-[3.65rem] flex-col items-center justify-center gap-0.5 rounded-[1.3rem] bg-ember text-[#1a1105] shadow-[0_8px_24px_-8px_rgba(217,155,82,0.8)] transition-transform hover:scale-[1.035] active:scale-95 sm:mx-1"
         >
-          <span className="-mt-0.5">+</span>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <span className="text-[10px] font-medium">Add</span>
         </button>
       )}
 
@@ -118,8 +130,13 @@ function UploadTray() {
   const done = items.filter((i) => i.status === 'ready').length
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[60] flex justify-center px-4 pb-28 sm:pb-32">
-      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-edge bg-ink-raised/95 shadow-2xl backdrop-blur-xl animate-rise">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center px-4 pb-[calc(5.75rem+env(safe-area-inset-bottom))] sm:pb-32">
+      <div
+        className="pointer-events-auto w-full max-w-md overflow-hidden rounded-2xl border border-edge bg-ink-raised/95 shadow-2xl backdrop-blur-xl animate-rise"
+        role="status"
+        aria-live="polite"
+        aria-label={busy ? `Uploading memories, ${done} of ${items.length} complete` : 'Memory upload finished'}
+      >
         <div className="flex items-center justify-between px-5 pt-4 pb-3">
           <p className="font-display text-xl">
             {busy
@@ -183,6 +200,11 @@ function UploadRow({ item }: { item: UploadItem }) {
         {(item.status === 'uploading' || item.status === 'preparing') && (
           <div className="mt-1.5 h-0.5 overflow-hidden rounded-full bg-edge">
             <div
+              role="progressbar"
+              aria-label={`Upload progress for ${item.file.name}`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={percent}
               className="h-full bg-ember transition-[width] duration-300"
               style={{ width: `${Math.max(percent, 3)}%` }}
             />

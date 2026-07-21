@@ -45,24 +45,15 @@ export default async function HomePage() {
     <Shell session={session}>
       {justArrived && media.length > 0 && <Welcome name={session.profile.display_name} />}
 
-      {media.length > 0 && !justArrived && (
-        <Masthead total={total} span={span} />
-      )}
-
-      {onThisDay.length > 0 && (
-        <section className="mt-4 mb-24">
-          <Shelf
-            title={onThisDayTitle(onThisDay[0].taken_at)}
-            subtitle="On this day"
-            items={onThisDay}
-          />
-        </section>
-      )}
+      {media.length > 0 && !justArrived && <Masthead total={total} span={span} />}
 
       <section>
         {media.length > 0 && (
-          <div className="mb-12 flex items-baseline justify-between border-b border-edge pb-5">
-            <h2 className="font-display text-3xl text-balance italic">Recently added</h2>
+          <div className="mb-8 flex items-end justify-between border-b border-edge pb-5 sm:mb-12">
+            <div>
+              <p className="eyebrow mb-2">The latest chapter</p>
+              <h2 className="font-display text-4xl text-balance sm:text-5xl">Recently added</h2>
+            </div>
             <span className="text-xs tracking-[0.25em] text-paper-faint uppercase">
               Newest first
             </span>
@@ -72,6 +63,18 @@ export default async function HomePage() {
         <Feed
           initial={media}
           initialCursor={media.length ? media[media.length - 1].created_at : null}
+          featuredFirst
+          afterFeatured={
+            onThisDay.length > 0 ? (
+              <section className="border-y border-edge py-10 sm:py-14">
+                <Shelf
+                  title={onThisDayTitle(onThisDay[0].taken_at)}
+                  subtitle="On this day"
+                  items={onThisDay}
+                />
+              </section>
+            ) : null
+          }
           emptyState={<FirstTime name={session.profile.display_name} />}
         />
       </section>
@@ -82,23 +85,45 @@ export default async function HomePage() {
 /** The archive announcing itself: name, count, and the years it spans. */
 function Masthead({ total, span }: { total: number; span: string | null }) {
   return (
-    <section className="mt-8 mb-16 animate-rise">
-      <p className="mb-3 text-[11px] tracking-[0.4em] text-paper-faint uppercase">
-        The family archive
-      </p>
-      <h1 className="font-display text-[clamp(3.5rem,10vw,7rem)] leading-[0.85] text-balance">
-        {appName}
-        <span className="text-ember">.</span>
-      </h1>
-      <p className="mt-5 text-sm text-paper-dim">
-        {total} {total === 1 ? 'memory' : 'memories'}
-        {span && (
-          <>
-            <span className="mx-2.5 text-paper-faint">·</span>
-            <span className="tracking-wide">{span}</span>
-          </>
-        )}
-      </p>
+    <section className="home-masthead mt-10 mb-14 animate-rise sm:mt-16 sm:mb-20">
+      <div className="max-w-4xl">
+        <p className="eyebrow">
+          {appName}<span className="text-ember">.</span> · The private family archive
+        </p>
+        <h1 className="mt-5 font-display text-[clamp(3.7rem,10vw,7.5rem)] leading-[0.84] tracking-[-0.04em] text-balance">
+          The story of us,
+          <br />
+          <span className="text-paper-dim italic">still in motion.</span>
+        </h1>
+      </div>
+
+      <div className="mt-8 grid gap-7 border-t border-edge pt-7 sm:grid-cols-[1fr_auto] sm:items-end">
+        <div>
+          <p className="max-w-lg text-base leading-relaxed text-paper-soft sm:text-lg">
+            The photographs, home movies, voices and small moments that become a family
+            history — kept close, and made to be watched together.
+          </p>
+          <p className="mt-5 text-xs tracking-[0.16em] text-paper-faint uppercase">
+            {total} {total === 1 ? 'memory' : 'memories'}
+            {span && (
+              <>
+                <span className="mx-2.5">·</span>
+                <span>{span}</span>
+              </>
+            )}
+          </p>
+        </div>
+
+        <Link href="/movie" className="movie-invitation group">
+          <span className="grid h-11 w-11 place-items-center rounded-full bg-ember text-[#1a1105] transition-transform group-hover:scale-105">
+            <span className="ml-0.5 text-sm" aria-hidden="true">▶</span>
+          </span>
+          <span>
+            <span className="block text-sm text-paper">Enter Movie Mode</span>
+            <span className="mt-0.5 block text-xs text-paper-dim">Watch the archive unfold</span>
+          </span>
+        </Link>
+      </div>
     </section>
   )
 }

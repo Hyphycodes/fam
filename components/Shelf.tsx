@@ -11,47 +11,56 @@ export function Shelf({
   subtitle,
   items,
   href,
+  hideHeading = false,
 }: {
   title: string
   subtitle?: string
   items: MediaView[]
   href?: string
+  hideHeading?: boolean
 }) {
   if (items.length === 0) return null
 
   return (
     <div>
-      <div className="mb-6 flex items-baseline justify-between gap-4">
-        <div>
-          {subtitle && (
-            <p className="mb-1 text-xs tracking-[0.2em] text-paper-faint uppercase">
-              {subtitle}
-            </p>
+      {!hideHeading && (
+        <div className="mb-6 flex items-baseline justify-between gap-4">
+          <div>
+            {subtitle && (
+              <p className="mb-1 text-xs tracking-[0.2em] text-paper-faint uppercase">
+                {subtitle}
+              </p>
+            )}
+            <h2 className="font-display text-title leading-none text-balance">{title}</h2>
+          </div>
+          {href && (
+            <Link
+              href={href}
+              className="shrink-0 text-sm text-paper-dim transition-colors hover:text-paper"
+            >
+              See all
+            </Link>
           )}
-          <h2 className="font-display text-title leading-none text-balance">{title}</h2>
         </div>
-        {href && (
-          <Link
-            href={href}
-            className="shrink-0 text-sm text-paper-dim transition-colors hover:text-paper"
-          >
-            See all
-          </Link>
-        )}
-      </div>
+      )}
 
       <div className="shelf pb-2">
         {items.map((media) => (
           <Link
             key={media.id}
             href={`/m/${media.id}`}
-            className="group w-56 sm:w-72"
+            className="group w-[72vw] max-w-64 sm:w-72 sm:max-w-none"
           >
             <div className="relative aspect-[4/5] overflow-hidden rounded-xl bg-ink-raised">
               {media.thumb_url ? (
                 <img
                   src={media.thumb_url}
-                  alt={media.caption ?? ''}
+                  width={media.width ?? undefined}
+                  height={media.height ?? undefined}
+                  alt={
+                    media.caption ||
+                    `${media.type === 'video' ? 'Video' : 'Photo'} shared by ${media.uploader_name}`
+                  }
                   loading="lazy"
                   decoding="async"
                   className="h-full w-full object-cover transition-transform duration-[1200ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105"

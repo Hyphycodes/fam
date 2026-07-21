@@ -16,16 +16,21 @@ export function Feed({
   initialCursor,
   query = '',
   emptyState,
+  featuredFirst = false,
+  afterFeatured,
 }: {
   initial: MediaView[]
   initialCursor: string | null
   /** Extra query string for /api/feed, e.g. `event=<id>`. */
   query?: string
   emptyState?: React.ReactNode
+  featuredFirst?: boolean
+  afterFeatured?: React.ReactNode
 }) {
   const [items, setItems] = useState(initial)
   const [cursor, setCursor] = useState(initialCursor)
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const [open, setOpen] = useState<number | null>(null)
   const sentinel = useRef<HTMLDivElement>(null)
 
@@ -40,14 +45,15 @@ export function Feed({
     setCursor(initialCursor)
   }
 
-  const loadMore = useCallback(async () => {
-    if (loading || !cursor) return
+  const loadMore = useCallback(async (force = false) => {
+    if (loading || !cursor || (loadError && !force)) return
     setLoading(true)
+    setLoadError(false)
     try {
       const params = new URLSearchParams(query)
       params.set('before', cursor)
       const response = await fetch(`/api/feed?${params}`)
-      if (!response.ok) return
+      if (!response.ok) throw new Error('feed')
       const data = (await response.json()) as {
         media: MediaView[]
         nextCursor: string | null
@@ -58,44 +64,60 @@ export function Feed({
         return [...current, ...data.media.filter((i) => !seen.has(i.id))]
       })
       setCursor(data.nextCursor)
+    } catch {
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
-  }, [cursor, loading, query])
+  }, [cursor, loadError, loading, query])
 
   useEffect(() => {
     const node = sentinel.current
-    if (!node || !cursor) return
+    if (!node || !cursor || loadError) return
     // Start fetching a full screen early so scrolling never hits a wall.
     const observer = new IntersectionObserver((entries) => {
       if (entries[0]?.isIntersecting) void loadMore()
     }, { rootMargin: '1200px' })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [cursor, loadMore])
+  }, [cursor, loadError, loadMore])
 
   if (items.length === 0) return <>{emptyState}</>
 
   return (
     <>
-      <div className="space-y-16 sm:space-y-24">
-        {items.map((media, index) => (
-          <div key={media.id}>
-            {/* A huge ghost numeral where one year gives way to the next —
-                scrolling the feed becomes scrolling back through time. */}
-            {index > 0 && items[index - 1].taken_year !== media.taken_year && (
-              <div className="mb-16 flex items-center gap-6 sm:mb-24">
-                <span className="year-ghost">{media.taken_year}</span>
-                <span className="h-px flex-1 bg-edge" />
-              </div>
-            )}
-            <MemoryCard
-              media={media}
-              priority={index < 2}
-              onOpen={() => setOpen(index)}
-            />
-          </div>
-        ))}
+      <div className={featuredFirst ? 'editorial-feed' : 'space-y-16 sm:space-y-24'}>
+        {items.map((media, index) => {
+          const paced = featuredFirst && index > 0
+          return (
+            <div
+              key={media.id}
+              className={
+                paced
+                  ? `editorial-memory ${index % 2 === 0 ? 'editorial-memory-right' : ''}`
+                  : undefined
+              }
+            >
+              {/* A huge ghost numeral where one year gives way to the next —
+                  scrolling the feed becomes scrolling back through time. */}
+              {index > 0 && items[index - 1].taken_year !== media.taken_year && (
+                <div className="mb-16 flex items-center gap-6 sm:mb-24">
+                  <span className="year-ghost">{media.taken_year}</span>
+                  <span className="h-px flex-1 bg-edge" />
+                </div>
+              )}
+              <MemoryCard
+                media={media}
+                priority={index === 0}
+                featured={featuredFirst && index === 0}
+                onOpen={() => setOpen(index)}
+              />
+              {index === 0 && afterFeatured && (
+                <div className="editorial-interlude">{afterFeatured}</div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       <div ref={sentinel} className="h-px" />
@@ -103,6 +125,21 @@ export function Feed({
       {loading && (
         <div className="mt-16 space-y-4">
           <div className="h-72 w-full animate-sweep rounded-2xl" />
+        </div>
+      )}
+
+      {loadError && (
+        <div className="mt-12 rounded-2xl border border-edge bg-ink-raised px-5 py-4 sm:flex sm:items-center sm:justify-between sm:gap-6">
+          <p className="text-sm leading-relaxed text-paper-dim">
+            The next reel did not come through. Your place in the archive is safe.
+          </p>
+          <button
+            type="button"
+            onClick={() => void loadMore(true)}
+            className="btn btn-ghost mt-4 shrink-0 sm:mt-0"
+          >
+            Try again
+          </button>
         </div>
       )}
 
@@ -127,25 +164,33 @@ export function Feed({
 function MemoryCard({
   media,
   priority,
+  featured,
   onOpen,
 }: {
   media: MediaView
   priority: boolean
+  featured: boolean
   onOpen: () => void
 }) {
   const ratio = media.width && media.height ? media.width / media.height : 4 / 3
 
   return (
-    <article className="animate-rise">
+    <article className={`animate-rise ${featured ? 'featured-memory' : ''}`}>
       <button
         onClick={onOpen}
+        aria-label={`Open ${media.caption || `${media.type} shared by ${media.uploader_name}`}`}
         className="group relative block w-full overflow-hidden rounded-3xl bg-ink-raised ring-1 ring-edge transition-shadow duration-500 ring-inset hover:shadow-[0_30px_80px_-20px_rgba(0,0,0,0.9)] hover:ring-edge-strong"
         style={{ aspectRatio: `${Math.min(Math.max(ratio, 0.6), 2.2)}` }}
       >
         {media.thumb_url || media.display_url ? (
           <img
             src={media.display_url ?? media.thumb_url ?? ''}
-            alt={media.caption ?? ''}
+            width={media.width ?? undefined}
+            height={media.height ?? undefined}
+            alt={
+              media.caption ||
+              `${media.type === 'video' ? 'Video' : 'Photo'} shared by ${media.uploader_name}`
+            }
             loading={priority ? 'eager' : 'lazy'}
             decoding="async"
             fetchPriority={priority ? 'high' : 'auto'}
@@ -177,14 +222,14 @@ function MemoryCard({
         )}
       </button>
 
-      <div className="mt-4 flex items-baseline justify-between gap-4 px-1">
+      <div className="mt-4 flex flex-col gap-2 px-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
         <div className="min-w-0">
           {media.caption && (
             <p className="mb-1 font-display text-2xl leading-snug text-paper text-balance">
               {media.caption}
             </p>
           )}
-          <p className="text-sm text-paper-dim">
+          <p className="text-sm leading-relaxed text-paper-dim">
             {media.uploader_name}
             <span className="mx-2 text-paper-faint">·</span>
             {warmDate(media.taken_at)}
@@ -205,11 +250,14 @@ function MemoryCard({
 
 function Counts({ media }: { media: MediaView }) {
   const bits = [
-    media.reaction_count > 0 && `${media.reaction_count}`,
-    media.comment_count > 0 && `${media.comment_count} note${media.comment_count === 1 ? '' : 's'}`,
-    media.voice_note_count > 0 && `${media.voice_note_count} voice`,
+    media.reaction_count > 0 &&
+      `${media.reaction_count} reaction${media.reaction_count === 1 ? '' : 's'}`,
+    media.comment_count > 0 &&
+      `${media.comment_count} note${media.comment_count === 1 ? '' : 's'}`,
+    media.voice_note_count > 0 &&
+      `${media.voice_note_count} voice note${media.voice_note_count === 1 ? '' : 's'}`,
   ].filter(Boolean)
 
   if (bits.length === 0) return null
-  return <p className="shrink-0 text-sm whitespace-nowrap text-paper-faint">{bits.join(' · ')}</p>
+  return <p className="shrink-0 text-sm text-paper-faint">{bits.join(' · ')}</p>
 }

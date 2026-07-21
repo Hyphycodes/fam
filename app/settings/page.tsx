@@ -34,25 +34,79 @@ export default async function SettingsPage() {
 
   return (
     <Shell session={session}>
-      <h1 className="mt-6 mb-4 font-display text-display leading-none">
-        {isOwner ? 'The family' : session.profile.display_name}
-      </h1>
-      <p className="mb-16 text-paper-dim">Signed in as {session.email}</p>
+      <header className="mt-8 mb-10 max-w-3xl sm:mt-14 sm:mb-14">
+        <p className="eyebrow">Keep the archive growing</p>
+        <h1 className="mt-4 font-display text-[clamp(3.5rem,9vw,6.5rem)] leading-[0.88] tracking-[-0.035em] text-balance">
+          {isOwner ? 'The family room' : session.profile.display_name}
+        </h1>
+        <p className="mt-6 max-w-xl leading-relaxed text-paper-dim">
+          {isOwner
+            ? 'Invite the people who belong here, shape memories into chapters, and choose how the archive sounds when it becomes a film.'
+            : 'The shared events, soundtrack, and account details behind your family archive.'}
+        </p>
+      </header>
 
-      <div className="space-y-20">
-        {isOwner && <InviteManager initial={invites} inviteBase={appUrl()} />}
-        <EventManager initial={events} />
-        {isOwner && <UploadLinkManager initial={links} events={events} />}
-        <MusicManager initial={tracks} />
+      <nav aria-label="Family settings sections" className="settings-index mb-8 sm:mb-10">
+        {isOwner && <SettingsJump href="#family-members">Family</SettingsJump>}
+        <SettingsJump href="#events">Events</SettingsJump>
+        {isOwner && <SettingsJump href="#guest-links">Guest links</SettingsJump>}
+        <SettingsJump href="#soundtrack">Soundtrack</SettingsJump>
+        <SettingsJump href="#account">Account</SettingsJump>
+      </nav>
 
-        <section className="border-t border-edge pt-10">
+      <div className="settings-panels space-y-6">
+        {isOwner && (
+          <SettingsPanel id="family-members">
+            <InviteManager initial={invites} inviteBase={appUrl()} />
+          </SettingsPanel>
+        )}
+        <SettingsPanel id="events">
+          <EventManager initial={events} />
+        </SettingsPanel>
+        {isOwner && (
+          <SettingsPanel id="guest-links">
+            <UploadLinkManager initial={links} events={events} />
+          </SettingsPanel>
+        )}
+        <SettingsPanel id="soundtrack">
+          <MusicManager initial={tracks} />
+        </SettingsPanel>
+
+        <section id="account" className="settings-panel scroll-mt-28">
+          <p className="eyebrow mb-3">Account</p>
+          <h2 className="font-display text-title">Your seat in the archive</h2>
+          <p className="mt-3 break-words text-paper-dim">
+            Signed in as {session.email}
+          </p>
           <form action="/api/auth/signout" method="post">
-            <button type="submit" className="btn btn-ghost">
+            <button type="submit" className="btn btn-ghost mt-8">
               Sign out of {appName}
             </button>
           </form>
         </section>
       </div>
     </Shell>
+  )
+}
+
+function SettingsJump({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a href={href} className="settings-jump">
+      {children}
+    </a>
+  )
+}
+
+function SettingsPanel({
+  id,
+  children,
+}: {
+  id: string
+  children: React.ReactNode
+}) {
+  return (
+    <section id={id} className="settings-panel scroll-mt-28">
+      {children}
+    </section>
   )
 }

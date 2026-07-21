@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { VideoFrame } from '@/components/VideoFrame'
 import { fullDate } from '@/lib/format'
@@ -19,6 +19,9 @@ export function Lightbox({
   onIndexChange: (next: number) => void
 }) {
   const media = items[index]
+  const dialog = useRef<HTMLDivElement>(null)
+  const closeButton = useRef<HTMLButtonElement>(null)
+  const touchStartX = useRef<number | null>(null)
 
   const go = useCallback(
     (delta: number) => {
@@ -29,29 +32,69 @@ export function Lightbox({
   )
 
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    // Stop the page behind from scrolling under the overlay, move focus into
+    // the dialog, and return it to the memory card when the viewer closes.
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    closeButton.current?.focus()
+    return () => {
+      document.body.style.overflow = previousOverflow
+      previouslyFocused?.focus()
+    }
+  }, [])
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
       if (event.key === 'ArrowRight') go(1)
       if (event.key === 'ArrowLeft') go(-1)
+
+      if (event.key === 'Tab' && dialog.current) {
+        const focusable = Array.from(
+          dialog.current.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((element) => element.getClientRects().length > 0)
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (!first || !last) return
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
     }
     window.addEventListener('keydown', onKey)
-    // Stop the page behind from scrolling under the overlay.
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      document.body.style.overflow = previous
-    }
+    return () => window.removeEventListener('keydown', onKey)
   }, [go, onClose])
 
   if (!media) return null
 
   return (
     <div
+      ref={dialog}
       className="fixed inset-0 z-[100] flex flex-col bg-ink/97 backdrop-blur-sm animate-fade"
       role="dialog"
       aria-modal="true"
-      aria-label={media.caption ?? 'Memory'}
+      aria-label={media.caption || 'Memory'}
+      onTouchStart={(event) => {
+        touchStartX.current = event.touches[0]?.clientX ?? null
+      }}
+      onTouchEnd={(event) => {
+        const startX = touchStartX.current
+        if (startX === null) return
+        const endX = event.changedTouches[0]?.clientX
+        touchStartX.current = null
+        if (endX === undefined) return
+        const distance = endX - startX
+        if (Math.abs(distance) < 56) return
+        go(distance < 0 ? 1 : -1)
+      }}
     >
       <div className="flex items-center justify-between px-5 py-4 sm:px-8">
         <div className="min-w-0">
@@ -74,6 +117,7 @@ export function Lightbox({
             </a>
           )}
           <button
+            ref={closeButton}
             onClick={onClose}
             aria-label="Close"
             className="rounded-full border border-edge-strong px-4 py-2 text-xs text-paper-soft transition-colors hover:bg-ink-hover hover:text-paper"
@@ -95,7 +139,12 @@ export function Lightbox({
           <img
             key={media.id}
             src={media.display_url}
-            alt={media.caption ?? ''}
+            width={media.width ?? undefined}
+            height={media.height ?? undefined}
+            alt={
+              media.caption ||
+              `${media.type === 'video' ? 'Video' : 'Photo'} shared by ${media.uploader_name}`
+            }
             className="max-h-full max-w-full rounded-lg object-contain animate-fade"
           />
         ) : (

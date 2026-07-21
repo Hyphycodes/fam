@@ -66,7 +66,8 @@ export function InviteManager({
 
   return (
     <section>
-      <h2 className="mb-2 font-display text-title">The family</h2>
+      <p className="eyebrow mb-3">Family members &amp; invitations</p>
+      <h2 className="mb-2 font-display text-title">Bring everyone in</h2>
       <p className="mb-8 max-w-lg text-paper-dim">
         Add someone&rsquo;s email, then text them the link. They sign in with a link to their
         own inbox — no password to invent or forget.
@@ -110,7 +111,7 @@ export function InviteManager({
 
       <ul className="divide-y divide-[color:var(--color-edge)]">
         {people.map((person) => (
-          <li key={person.email} className="flex items-center justify-between gap-4 py-3.5">
+          <li key={person.email} className="flex flex-col items-start justify-between gap-2 py-3.5 sm:flex-row sm:items-center sm:gap-4">
             <div className="min-w-0">
               <p className="truncate text-paper">
                 {person.display_name || person.email.split('@')[0]}
@@ -120,13 +121,14 @@ export function InviteManager({
               </p>
               <p className="truncate text-sm text-paper-faint">{person.email}</p>
             </div>
-            <div className="flex shrink-0 items-center gap-4">
+            <div className="flex max-w-full shrink-0 flex-wrap items-center gap-x-4 gap-y-2">
               <span className="text-xs text-paper-faint">
                 {person.claimed_at ? `joined ${warmDate(person.claimed_at)}` : 'not yet joined'}
               </span>
               {person.role !== 'owner' && (
                 <button
                   onClick={() => remove(person.email)}
+                  aria-label={`Remove ${person.display_name || person.email} from the family`}
                   className="text-xs text-paper-faint transition-colors hover:text-ember-soft"
                 >
                   remove
@@ -182,7 +184,8 @@ export function UploadLinkManager({
 
   return (
     <section>
-      <h2 className="mb-2 font-display text-title">Drop-off links</h2>
+      <p className="eyebrow mb-3">Guest upload links</p>
+      <h2 className="mb-2 font-display text-title">Open a side door</h2>
       <p className="mb-8 max-w-lg text-paper-dim">
         A link anyone can open — no account, no app tour — that puts their photos and videos
         straight into one event. Good for the group chat after a cookout.
@@ -231,6 +234,7 @@ export function UploadLinkManager({
               </div>
               <button
                 onClick={() => revoke(link.id)}
+                aria-label={`Turn off upload link for ${link.event_name ?? 'this event'}`}
                 className="shrink-0 text-xs text-paper-faint transition-colors hover:text-ember-soft"
               >
                 turn off
@@ -239,6 +243,9 @@ export function UploadLinkManager({
           </li>
         ))}
       </ul>
+      {links.length === 0 && events.length > 0 && (
+        <p className="text-sm text-paper-faint">No guest links are open right now.</p>
+      )}
     </section>
   )
 }
@@ -278,7 +285,8 @@ export function EventManager({
 
   return (
     <section>
-      <h2 className="mb-2 font-display text-title">Events</h2>
+      <p className="eyebrow mb-3">Events &amp; collections</p>
+      <h2 className="mb-2 font-display text-title">Shape the chapters</h2>
       <p className="mb-8 max-w-lg text-paper-dim">
         A cookout, a trip, a christening. Memories filed under one become a chapter in Movie
         Mode.
@@ -320,6 +328,11 @@ export function EventManager({
           </li>
         ))}
       </ul>
+      {list.length === 0 && (
+        <p className="text-sm text-paper-faint">
+          No chapters yet. Create the first event when the next family day is worth gathering.
+        </p>
+      )}
     </section>
   )
 }
@@ -375,7 +388,8 @@ export function MusicManager({ initial }: { initial: { id: string; title: string
 
   return (
     <section>
-      <h2 className="mb-2 font-display text-title">Music</h2>
+      <p className="eyebrow mb-3">Soundtrack</p>
+      <h2 className="mb-2 font-display text-title">Set the room&rsquo;s tone</h2>
       <p className="mb-8 max-w-lg text-paper-dim">
         What plays under Movie Mode. It ducks automatically when a video with its own sound
         comes up, then swells back on the photos.
@@ -402,6 +416,7 @@ export function MusicManager({ initial }: { initial: { id: string; title: string
           <li key={track.id} className="flex items-center justify-between gap-4 py-3">
             <p className="truncate text-paper-soft">{track.title}</p>
             <button
+              aria-label={`Remove ${track.title} from the soundtrack`}
               onClick={async () => {
                 setTracks((current) => current.filter((t) => t.id !== track.id))
                 await fetch(`/api/music?id=${track.id}`, { method: 'DELETE' })
@@ -413,6 +428,11 @@ export function MusicManager({ initial }: { initial: { id: string; title: string
           </li>
         ))}
       </ul>
+      {tracks.length === 0 && (
+        <p className="text-sm text-paper-faint">
+          Movie Mode works without music. Add a track whenever the archive needs a score.
+        </p>
+      )}
     </section>
   )
 }

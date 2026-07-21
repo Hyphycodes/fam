@@ -55,7 +55,12 @@ export default async function MemoryPage({
           ) : media.display_url ? (
             <img
               src={media.display_url}
-              alt={media.caption ?? ''}
+              width={media.width ?? undefined}
+              height={media.height ?? undefined}
+              alt={
+                media.caption ||
+                `${media.type === 'video' ? 'Video' : 'Photo'} shared by ${media.uploader_name}`
+              }
               className="max-h-[78vh] w-full object-contain animate-fade"
             />
           ) : null}
