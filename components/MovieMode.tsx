@@ -421,7 +421,7 @@ function StartScreen({
                   onClick={() => onFlavor(option)}
                   className={`rounded-full border px-4 py-2 text-sm transition-colors ${
                     active
-                      ? 'border-ember bg-ember text-[#1a1105]'
+                      ? 'border-white bg-white text-ink'
                       : 'border-edge-strong text-paper-soft hover:bg-ink-hover hover:text-paper'
                   }`}
                 >
@@ -437,7 +437,7 @@ function StartScreen({
             type="checkbox"
             checked={quiet}
             onChange={(event) => onQuiet(event.target.checked)}
-            className="h-4 w-4 accent-[#d99b52]"
+            className="h-4 w-4 accent-white"
           />
           Quiet background mode — longer holds, softer music, no title cards
         </label>
@@ -544,7 +544,7 @@ function Controls({
               type="checkbox"
               checked={quiet}
               onChange={(event) => onQuiet(event.target.checked)}
-              className="h-3.5 w-3.5 accent-[#d99b52]"
+              className="h-3.5 w-3.5 accent-white"
             />
             Quiet background mode
           </label>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Lightbox } from '@/components/Lightbox'
-import { duration, osdDate, warmDate } from '@/lib/format'
+import { duration, warmDate } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
 /**
@@ -98,11 +98,10 @@ export function Feed({
                   : undefined
               }
             >
-              {/* Where one year gives way to the next, the tape rewinds —
-                  scrolling the feed becomes seeking back through time. */}
+              {/* A quiet numeral where one year gives way to the next —
+                  scrolling the feed becomes scrolling back through time. */}
               {index > 0 && items[index - 1].taken_year !== media.taken_year && (
-                <div className="mb-16 flex items-center gap-5 sm:mb-24">
-                  <span className="year-ghost" aria-hidden="true">◄◄</span>
+                <div className="mb-14 flex items-center gap-6 sm:mb-20">
                   <span className="year-ghost">{media.taken_year}</span>
                   <span className="h-px flex-1 bg-edge" />
                 </div>
@@ -130,30 +129,24 @@ export function Feed({
       )}
 
       {loadError && (
-        <div className="mt-12 rounded-lg border border-edge bg-ink-raised px-5 py-4 sm:flex sm:items-center sm:justify-between sm:gap-6">
-          <div>
-            <p className="osd text-base text-rec">⚠ Tracking error</p>
-            <p className="mt-1 text-sm leading-relaxed text-paper-dim">
-              The next stretch of tape did not come through. Your place in the archive is safe.
-            </p>
-          </div>
+        <div className="mt-12 rounded-xl border border-edge bg-ink-raised px-5 py-4 sm:flex sm:items-center sm:justify-between sm:gap-6">
+          <p className="text-sm leading-relaxed text-paper-dim">
+            The next page did not come through. Your place in the archive is safe.
+          </p>
           <button
             type="button"
             onClick={() => void loadMore(true)}
             className="btn btn-ghost mt-4 shrink-0 sm:mt-0"
           >
-            Retry
+            Try again
           </button>
         </div>
       )}
 
       {!cursor && items.length > 8 && (
-        <div className="mt-24 text-center">
-          <p className="osd osd-burn text-2xl text-paper-soft">◼ End of tape</p>
-          <p className="mt-2 text-sm text-paper-faint">
-            That&rsquo;s everything, all the way back. Be kind — rewind.
-          </p>
-        </div>
+        <p className="mt-24 text-center text-sm text-paper-faint">
+          That&rsquo;s everything, all the way back.
+        </p>
       )}
 
       {open !== null && (
@@ -207,41 +200,36 @@ function MemoryCard({
           <div className="h-full w-full animate-sweep" />
         )}
 
-        {/* A breath of dark at the base so the burned-in OSD always reads. */}
-        <div className="absolute inset-0 bg-gradient-to-t from-ink/45 via-transparent to-transparent opacity-80 transition-opacity duration-500 group-hover:opacity-100" />
-
-        {/* The timestamp, burned into the frame the way the camcorder left it. */}
-        <span className="osd osd-burn absolute bottom-4 left-4 text-base sm:bottom-5 sm:left-5 sm:text-lg">
-          {osdDate(media.taken_at)}
-        </span>
+        {/* A breath of dark at the base so the badges always sit on something. */}
+        <div className="absolute inset-0 bg-gradient-to-t from-ink/40 via-transparent to-transparent opacity-80 transition-opacity duration-500 group-hover:opacity-100" />
 
         {media.type === 'video' && (
-          <span className="osd osd-burn absolute top-4 left-4 flex items-center gap-2 text-base opacity-90 transition-opacity duration-300 group-hover:opacity-100 sm:top-5 sm:left-5 sm:text-lg">
-            ▶ PLAY
-            {duration(media.duration_seconds) && (
-              <span className="text-paper-soft">{duration(media.duration_seconds)}</span>
-            )}
+          <span className="meta-mono absolute bottom-4 left-4 flex items-center gap-2 rounded-[0.3rem] bg-black/65 px-2 py-1 text-white/90 sm:bottom-5 sm:left-5">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M8 5.5v13l11-6.5z" />
+            </svg>
+            {duration(media.duration_seconds) || 'Video'}
           </span>
         )}
 
         {media.favorite && (
           <span
-            className="osd osd-burn absolute top-4 right-4 flex items-center gap-1.5 text-base text-rec sm:top-5 sm:right-5 sm:text-lg"
+            className="absolute top-4 right-4 text-white/90 drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)] sm:top-5 sm:right-5"
             title="One of the good ones"
           >
-            <span className="rec-dot" aria-hidden="true" /> KEEP
+            ★
           </span>
         )}
       </button>
 
-      <div className="mt-4 flex flex-col gap-2 px-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+      <div className="mt-3.5 flex flex-col gap-2 px-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
         <div className="min-w-0">
           {media.caption && (
-            <p className="hand mb-0.5 text-[1.65rem] leading-snug text-ember-soft text-balance">
+            <p className="mb-0.5 text-lg leading-snug font-medium text-paper text-balance">
               {media.caption}
             </p>
           )}
-          <p className="osd text-sm leading-relaxed text-paper-dim sm:text-base">
+          <p className="text-sm leading-relaxed text-paper-dim">
             {media.uploader_name}
             <span className="mx-2 text-paper-faint">·</span>
             {warmDate(media.taken_at)}
@@ -271,5 +259,5 @@ function Counts({ media }: { media: MediaView }) {
   ].filter(Boolean)
 
   if (bits.length === 0) return null
-  return <p className="osd shrink-0 text-sm text-paper-faint">{bits.join(' · ')}</p>
+  return <p className="shrink-0 text-sm text-paper-faint">{bits.join(' · ')}</p>
 }

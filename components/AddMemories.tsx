@@ -67,7 +67,7 @@ export function AddMemoriesButton({
         <button
           onClick={pick}
           aria-label="Add memories"
-          className="dock-add mx-0.5 flex h-[3.65rem] w-[3.65rem] flex-col items-center justify-center gap-0.5 rounded-[1.3rem] bg-ember text-[#1a1105] shadow-[0_8px_24px_-8px_rgba(217,155,82,0.8)] transition-transform hover:scale-[1.035] active:scale-95 sm:mx-1"
+          className="dock-add mx-0.5 flex h-[3.65rem] w-[3.65rem] flex-col items-center justify-center gap-0.5 rounded-full bg-white text-ink shadow-[0_8px_24px_-8px_rgba(0,0,0,0.9)] transition-transform hover:scale-[1.035] active:scale-95 sm:mx-1"
         >
           <svg
             width="20"
@@ -175,7 +175,7 @@ function UploadRow({ item }: { item: UploadItem }) {
           <div className="h-full w-full animate-sweep" />
         )}
         {item.status === 'ready' && (
-          <div className="absolute inset-0 grid place-items-center bg-ink/55 text-ember">✓</div>
+          <div className="absolute inset-0 grid place-items-center bg-ink/55 text-white">✓</div>
         )}
       </div>
 

@@ -6,16 +6,16 @@ import { AddMemoriesButton } from '@/components/AddMemories'
 
 type DockIcon = 'home' | 'browse' | 'movie' | 'family'
 
-/** A quiet remote control for the archive, sized for thumbs and safe areas. */
+/** A quiet dock, sized for thumbs and safe areas. State is brightness. */
 export function Nav({ isOwner }: { isOwner: boolean }) {
   return (
     <nav
       aria-label="Primary navigation"
       className="archive-dock fixed inset-x-0 bottom-0 z-50 flex justify-center px-2 pb-[max(0.55rem,env(safe-area-inset-bottom))] pt-5"
     >
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-ink via-ink/92 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-ink via-ink/85 to-transparent" />
 
-      <div className="relative flex items-center gap-0.5 rounded-[0.9rem] border border-edge-strong bg-ink-raised/94 p-1.5 shadow-[0_18px_60px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl">
+      <div className="relative flex items-center gap-0.5 rounded-full border border-white/10 bg-[#141414]/92 p-1.5 shadow-[0_18px_60px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl">
         <NavLink href="/" label="Home" icon="home" />
         <NavLink href="/browse" label="Browse" icon="browse" />
         <AddMemoriesButton />
@@ -34,32 +34,26 @@ function NavLink({ href, label, icon }: { href: string; label: string; icon: Doc
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
-      className={`dock-link relative flex min-h-14 w-[3.55rem] flex-col items-center justify-center gap-0.5 rounded-[0.6rem] transition-all sm:w-[4.35rem] ${
+      className={`dock-link relative flex min-h-14 w-[3.55rem] flex-col items-center justify-center gap-1 rounded-full text-[10px] font-medium transition-all sm:w-[4.35rem] ${
         active
-          ? 'bg-ink-hover text-ember-soft'
-          : 'text-paper-dim hover:bg-ink-hover hover:text-paper active:scale-[0.97]'
+          ? 'text-white'
+          : 'text-paper-faint hover:text-paper-soft active:scale-[0.97]'
       }`}
     >
-      <DockGlyph icon={icon} />
-      <span className="osd text-[0.8rem] leading-none">{label}</span>
-      {active && (
-        <span
-          className="absolute bottom-1 h-0.5 w-3 rounded-full bg-ember shadow-[0_0_8px_rgba(255,180,94,0.9)]"
-          aria-hidden="true"
-        />
-      )}
+      <DockGlyph icon={icon} bold={active} />
+      <span>{label}</span>
     </Link>
   )
 }
 
-function DockGlyph({ icon }: { icon: DockIcon }) {
+function DockGlyph({ icon, bold }: { icon: DockIcon; bold: boolean }) {
   const common = {
     width: 19,
     height: 19,
     viewBox: '0 0 24 24',
     fill: 'none',
     stroke: 'currentColor',
-    strokeWidth: 1.5,
+    strokeWidth: bold ? 2 : 1.5,
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
     'aria-hidden': true,

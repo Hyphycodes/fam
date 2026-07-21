@@ -1,27 +1,20 @@
 import type { Metadata, Viewport } from 'next'
-import { Caveat, Inter, VT323 } from 'next/font/google'
+import { Geist, Geist_Mono } from 'next/font/google'
 import { ServiceWorker } from '@/components/ServiceWorker'
 import { appName } from '@/lib/env'
 import './globals.css'
 
-// The camcorder's on-screen display — dates, counts, controls, headlines.
-const osdPixel = VT323({
-  weight: '400',
-  subsets: ['latin'],
-  variable: '--font-osd-pixel',
-  display: 'swap',
-})
-
-// Marker on the tape label — captions written by a human hand.
-const handScript = Caveat({
-  subsets: ['latin'],
-  variable: '--font-hand-script',
-  display: 'swap',
-})
-
-const bodySans = Inter({
+// One clean grotesk carries the whole interface; weight does the talking.
+const bodySans = Geist({
   subsets: ['latin'],
   variable: '--font-body-sans',
+  display: 'swap',
+})
+
+// Reserved for tiny metadata — dates, timecodes, counters.
+const metaMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-meta-mono',
   display: 'swap',
 })
 
@@ -37,7 +30,7 @@ export const metadata: Metadata = {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#0d0a06',
+  themeColor: '#0a0a0a',
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
@@ -45,10 +38,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${osdPixel.variable} ${handScript.variable} ${bodySans.variable}`}>
-      <body className="grain vignette min-h-dvh bg-ink text-paper antialiased">
+    <html lang="en" className={`${bodySans.variable} ${metaMono.variable}`}>
+      <body className="min-h-dvh bg-ink text-paper antialiased">
         {children}
-        <div className="crt-overlay" aria-hidden="true" />
         <ServiceWorker />
       </body>
     </html>

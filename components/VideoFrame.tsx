@@ -13,6 +13,7 @@ export function VideoFrame({
   poster,
   autoplay = false,
   muted = false,
+  loop = false,
   controls = true,
   className = '',
   title = 'Video',
@@ -21,6 +22,7 @@ export function VideoFrame({
   poster?: string | null
   autoplay?: boolean
   muted?: boolean
+  loop?: boolean
   controls?: boolean
   className?: string
   title?: string
@@ -30,6 +32,7 @@ export function VideoFrame({
   // switch it *on*.
   if (autoplay) url.searchParams.set('autoplay', 'true')
   if (muted) url.searchParams.set('muted', 'true')
+  if (loop) url.searchParams.set('loop', 'true')
   if (!controls) url.searchParams.set('controls', 'false')
   if (poster) url.searchParams.set('poster', poster)
 
