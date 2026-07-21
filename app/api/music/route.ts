@@ -30,7 +30,7 @@ export async function GET() {
 
     return ok({ tracks })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'music')
   }
 }
 
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
 
     return ok({ key, putUrl: await presignPut(key, type) })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'music')
   }
 }
 
@@ -83,7 +83,7 @@ export async function PUT(request: Request) {
     if (error) return fail(`Could not add that track: ${error.message}`, 500)
     return ok({ track: data })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'music')
   }
 }
 
@@ -99,6 +99,6 @@ export async function DELETE(request: Request) {
     await db.from('music_tracks').delete().eq('id', id)
     return ok({ deleted: true })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'music')
   }
 }

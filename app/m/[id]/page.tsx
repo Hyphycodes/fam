@@ -32,21 +32,8 @@ export default async function MemoryPage({
   // is the moment it gets marked ready.
   await reconcileProcessingVideos()
 
-  const [media, events, memberRows, peopleRows] = await Promise.all([
-    getMediaById(db, id),
-    getEvents(db),
-    db.from('members').select('display_name'),
-    db.from('people').select('name'),
-  ])
+  const [media, events] = await Promise.all([getMediaById(db, id), getEvents(db)])
   if (!media) notFound()
-
-  // Members + previously-used names, for the tag picker.
-  const tagSuggestions = [
-    ...new Set([
-      ...((memberRows.data ?? []) as { display_name: string }[]).map((m) => m.display_name),
-      ...((peopleRows.data ?? []) as { name: string }[]).map((p) => p.name),
-    ]),
-  ].sort()
 
   const mine =
     viewer.kind === 'member'
@@ -138,12 +125,7 @@ export default async function MemoryPage({
           <Reactions mediaId={media.id} />
           {viewer.kind === 'legacy' && <VoiceNotes mediaId={media.id} />}
           <Comments mediaId={media.id} />
-          <MemoryEditor
-            media={media}
-            events={events}
-            canDelete={canDelete}
-            suggestions={tagSuggestions}
-          />
+          <MemoryEditor media={media} events={events} canDelete={canDelete} />
         </div>
       </article>
     </Shell>

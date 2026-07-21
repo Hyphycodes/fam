@@ -54,6 +54,6 @@ export async function POST(request: Request) {
 
     return ok({ sent: true })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'auth/magic-link')
   }
 }

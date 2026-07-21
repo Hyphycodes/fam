@@ -5,6 +5,8 @@ import { Shell } from '@/components/Shell'
 import { VideoFrame } from '@/components/VideoFrame'
 import { AddMemoriesButton } from '@/components/AddMemories'
 import { ActivityStrip } from '@/components/ActivityStrip'
+import { Avatar } from '@/components/Avatar'
+import { PeopleStack } from '@/components/PeopleStack'
 import { getRecentActivity } from '@/lib/community/activity'
 import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
@@ -189,19 +191,33 @@ function Billboard({ media }: { media: MediaView }) {
             {title}
           </h1>
           <p
-            className="meta-mono mt-2.5 text-white/60 animate-rise"
+            className="meta-mono mt-2.5 flex flex-wrap items-center gap-x-2 text-white/60 animate-rise"
             style={{ animationDelay: '120ms' }}
           >
             {fullDate(media.taken_at)}
-            <span className="mx-2 text-white/30">·</span>
-            {media.uploader_name}
+            <span className="text-white/30">·</span>
+            <span className="inline-flex items-center gap-1.5">
+              <Avatar name={media.uploader_name} src={media.uploader_avatar_url} size={18} />
+              {media.uploader_name}
+            </span>
             {media.event_name && (
               <>
-                <span className="mx-2 text-white/30">·</span>
+                <span className="text-white/30">·</span>
                 {media.event_name}
               </>
             )}
           </p>
+          {media.people.length > 0 && (
+            <p
+              className="mt-2 flex items-center gap-2 animate-rise"
+              style={{ animationDelay: '150ms' }}
+            >
+              <PeopleStack people={media.people} size={22} max={5} />
+              <span className="meta-mono text-white/50">
+                {media.people.map((p) => p.name).join(', ')}
+              </span>
+            </p>
+          )}
           <div
             className="mt-5 flex items-center gap-3 animate-rise"
             style={{ animationDelay: '180ms' }}

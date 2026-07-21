@@ -1,8 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { UploadQueue, type UploadContext, type UploadItem } from '@/lib/client/uploader'
+import { UploadDetailsSheet } from '@/components/UploadDetailsSheet'
 
 /**
  * "Add memories".
@@ -35,11 +36,15 @@ export function AddMemoriesButton({
   variant?: 'nav' | 'hero'
 }) {
   const input = useRef<HTMLInputElement>(null)
+  const [pending, setPending] = useState<File[] | null>(null)
+  // A public drop-off link has no session — the tag/event pickers need one, so
+  // that flow skips straight to uploading, exactly as it always has.
+  const anonymous = Boolean(context?.linkToken)
 
   const pick = useCallback(() => {
-    queue.setContext(context ?? {})
+    if (anonymous) queue.setContext(context ?? {})
     input.current?.click()
-  }, [context])
+  }, [anonymous, context])
 
   return (
     <>
@@ -53,11 +58,25 @@ export function AddMemoriesButton({
         className="sr-only"
         onChange={(event) => {
           const files = Array.from(event.target.files ?? [])
-          if (files.length) queue.add(files)
-          // Reset so picking the same file twice still fires a change event.
           event.target.value = ''
+          if (files.length === 0) return
+          if (anonymous) queue.add(files)
+          else setPending(files)
         }}
       />
+
+      {pending && (
+        <UploadDetailsSheet
+          fileCount={pending.length}
+          defaultEventId={context?.eventId}
+          onCancel={() => setPending(null)}
+          onConfirm={(details) => {
+            queue.setContext({ ...(context ?? {}), details })
+            queue.add(pending)
+            setPending(null)
+          }}
+        />
+      )}
 
       {variant === 'hero' ? (
         <button onClick={pick} className="btn btn-primary px-8 py-4 text-base">

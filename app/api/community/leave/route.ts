@@ -9,6 +9,6 @@ export async function POST() {
     await signOutMember()
     return NextResponse.redirect(new URL('/enter', appUrl()), { status: 303 })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'community/leave')
   }
 }

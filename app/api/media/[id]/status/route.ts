@@ -88,6 +88,6 @@ export async function GET(
       state: video.state,
     })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media/status')
   }
 }

@@ -169,7 +169,12 @@ typed a different address. It's checked case-insensitively.
 Configuration. Site URL and Redirect URLs both need to match where you're
 actually running.
 
-**Videos upload, photos don't** — R2 CORS. See above.
+**Videos upload, photos don't** — R2 CORS. See above. If the upload error
+mentions "cloud storage" or CORS, this is it. Vercel gives a project several
+working domains (the production alias, `<project>-<team>.vercel.app`, any
+custom domain) — run `npm run r2:cors -- <url>` once for *every* origin the
+family actually opens the app from, not just the first one you tried. The
+in-app error message names this exact fix so nobody has to guess twice.
 
 **Photo uploads fail with 403 SignatureDoesNotMatch** — something is rewriting
 the `Content-Type` header. R2 signs it, so it has to arrive exactly as sent.

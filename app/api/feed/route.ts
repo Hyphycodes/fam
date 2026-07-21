@@ -30,6 +30,6 @@ export async function GET(request: Request) {
       nextCursor: media.length ? media[media.length - 1].created_at : null,
     })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'feed')
   }
 }

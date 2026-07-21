@@ -1,14 +1,17 @@
 import { fail, handleError, ok, readJson } from '@/lib/api'
 import { getSession } from '@/lib/auth'
+import { getViewer } from '@/lib/viewer'
 import { getEvents } from '@/lib/queries'
 import { createClient } from '@/lib/supabase/server'
+import { readDb } from '@/lib/db'
 
+/** The event list for pickers (upload details, editing) — any viewer. */
 export async function GET() {
   try {
-    if (!(await getSession())) return fail('Not signed in.', 401)
-    return ok({ events: await getEvents(await createClient()) })
+    if (!(await getViewer())) return fail('Not signed in.', 401)
+    return ok({ events: await getEvents(readDb()) })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'events')
   }
 }
 
@@ -35,6 +38,6 @@ export async function POST(request: Request) {
     if (error) return fail(`Could not create that: ${error.message}`, 500)
     return ok({ event: data })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'events')
   }
 }

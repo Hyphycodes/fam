@@ -1,4 +1,4 @@
-import { canWriteMedia, fail, handleError, isUploader, ok, readJson, resolveUploader } from '@/lib/api'
+import { canWriteMedia, fail, handleError, isUploader, logDbError, ok, readJson, resolveUploader } from '@/lib/api'
 
 /** The phone finished PUTting a photo's three files. Let it into the feed. */
 export async function POST(
@@ -19,9 +19,12 @@ export async function POST(
       .eq('id', id)
       .eq('status', 'processing')
 
-    if (error) return fail(`Could not finish that upload: ${error.message}`, 500)
+    if (error) {
+      logDbError('media/ready', error, { mediaId: id })
+      return fail(`Could not finish that upload: ${error.message}`, 500)
+    }
     return ok({ status: 'ready' })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media/ready')
   }
 }

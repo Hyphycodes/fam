@@ -1,4 +1,6 @@
 import Link from 'next/link'
+import { Avatar } from '@/components/Avatar'
+import { PeopleStack } from '@/components/PeopleStack'
 import { duration, osdDate } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
@@ -72,7 +74,15 @@ export function Shelf({
             <p className="mt-1.5 truncate px-0.5 text-[0.8125rem] leading-snug text-paper-soft">
               {media.caption || media.uploader_name}
             </p>
-            <p className="meta-mono truncate px-0.5">{osdDate(media.taken_at)}</p>
+            <div className="mt-0.5 flex items-center justify-between gap-2 px-0.5">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Avatar name={media.uploader_name} src={media.uploader_avatar_url} size={16} />
+                <span className="meta-mono truncate">{osdDate(media.taken_at)}</span>
+              </span>
+              {media.people.length > 0 && (
+                <PeopleStack people={media.people} size={16} max={3} />
+              )}
+            </div>
           </div>
         ))}
       </div>

@@ -28,7 +28,7 @@ export async function GET() {
       inviteBase: appUrl(),
     })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'invites')
   }
 }
 
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     // family actually shares things.
     return ok({ invited: address, link: appUrl() })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'invites')
   }
 }
 
@@ -90,6 +90,6 @@ export async function DELETE(request: Request) {
       note: 'They can no longer sign in. If they are signed in right now, sign them out from Supabase → Authentication → Users.',
     })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'invites')
   }
 }

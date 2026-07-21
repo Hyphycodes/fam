@@ -68,7 +68,7 @@ export async function getBoardEvents(db: DB): Promise<BoardEvent[]> {
           cover = key ? await presignGet(key) : null
         }
       }
-      const host = hosts.get(event.created_by_member ?? '')
+      const host = hostFor(event, hosts)
       return {
         id: event.id,
         name: event.name,
@@ -97,7 +97,7 @@ export async function getCollectionById(db: DB, id: string): Promise<BoardEvent 
     loadHosts(db, [event]),
   ])
 
-  const host = hosts.get(event.created_by_member ?? '')
+  const host = hostFor(event, hosts)
   return {
     id: event.id,
     name: event.name,
@@ -113,20 +113,41 @@ export async function getCollectionById(db: DB, id: string): Promise<BoardEvent 
   }
 }
 
-async function loadHosts(
-  db: DB,
-  events: EventRow[],
-): Promise<Map<string, { display_name: string; avatar_url: string | null }>> {
-  const memberIds = [...new Set(events.map((e) => e.created_by_member).filter(Boolean))] as string[]
-  if (memberIds.length === 0) return new Map()
-  const { data } = await db
-    .from('members')
-    .select('id, display_name, avatar_path')
-    .in('id', memberIds)
-  return new Map(
-    ((data ?? []) as { id: string; display_name: string; avatar_path: string | null }[]).map((m) => [
-      m.id,
-      { display_name: m.display_name, avatar_url: avatarUrl(m.avatar_path) },
-    ]),
+type Host = { display_name: string; avatar_url: string | null }
+type HostMaps = { byMember: Map<string, Host>; byLegacy: Map<string, Host> }
+
+/** Events can be hosted by a passcode member or a legacy email account —
+ *  whichever created them. Try the member id first, then the legacy id. */
+function hostFor(event: EventRow, hosts: HostMaps): Host | undefined {
+  return (
+    (event.created_by_member ? hosts.byMember.get(event.created_by_member) : undefined) ??
+    (event.created_by ? hosts.byLegacy.get(event.created_by) : undefined)
   )
+}
+
+async function loadHosts(db: DB, events: EventRow[]): Promise<HostMaps> {
+  const memberIds = [...new Set(events.map((e) => e.created_by_member).filter(Boolean))] as string[]
+  const legacyIds = [...new Set(events.map((e) => e.created_by).filter(Boolean))] as string[]
+
+  const [{ data: members }, { data: profiles }] = await Promise.all([
+    memberIds.length
+      ? db.from('members').select('id, display_name, avatar_path').in('id', memberIds)
+      : Promise.resolve({ data: [] }),
+    legacyIds.length
+      ? db.from('profiles').select('id, display_name, avatar_url').in('id', legacyIds)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  return {
+    byMember: new Map(
+      ((members ?? []) as { id: string; display_name: string; avatar_path: string | null }[]).map(
+        (m) => [m.id, { display_name: m.display_name, avatar_url: avatarUrl(m.avatar_path) }],
+      ),
+    ),
+    byLegacy: new Map(
+      ((profiles ?? []) as { id: string; display_name: string; avatar_url: string | null }[]).map(
+        (p) => [p.id, { display_name: p.display_name, avatar_url: avatarUrl(p.avatar_url) }],
+      ),
+    ),
+  }
 }

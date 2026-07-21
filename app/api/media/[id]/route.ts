@@ -16,7 +16,7 @@ export async function GET(
     if (!media) return fail('That memory is not here.', 404)
     return ok({ media })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media')
   }
 }
 
@@ -105,7 +105,7 @@ export async function PATCH(
     const media = await getMediaById(db, id)
     return ok({ media })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media')
   }
 }
 
@@ -154,6 +154,6 @@ export async function DELETE(
 
     return ok({ deleted: true })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media')
   }
 }

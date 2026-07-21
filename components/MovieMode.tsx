@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { buildReel, kenBurns, type Segment } from '@/lib/client/reel'
 import { MusicBed, MUSIC_LEVEL, MUSIC_LEVEL_QUIET } from '@/lib/client/music'
 import { VideoFrame } from '@/components/VideoFrame'
+import { Avatar } from '@/components/Avatar'
+import { PeopleStack } from '@/components/PeopleStack'
 import { fullDate } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
@@ -338,9 +340,13 @@ function Frame({
               {media.caption}
             </p>
           )}
-          <p className="mt-2 text-[clamp(0.7rem,1.2vw,0.95rem)] tracking-[0.2em] text-paper-dim uppercase">
-            {fullDate(media.taken_at)}
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+            <span className="flex items-center gap-1.5 text-[clamp(0.7rem,1.2vw,0.95rem)] tracking-[0.2em] text-paper-dim uppercase">
+              <Avatar name={media.uploader_name} src={media.uploader_avatar_url} size={20} />
+              {fullDate(media.taken_at)}
+            </span>
+            {media.people.length > 0 && <PeopleStack people={media.people} size={20} max={4} />}
+          </div>
         </div>
       )}
     </div>

@@ -11,7 +11,7 @@ export async function GET(
     if (comments === null) return fail('Not signed in.', 401)
     return ok({ comments })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'collections/comments')
   }
 }
 
@@ -26,7 +26,7 @@ export async function POST(
     if (!result.comment) return fail(result.error ?? 'Could not post that.', result.status ?? 400)
     return ok({ comment: result.comment })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'collections/comments')
   }
 }
 
@@ -38,6 +38,6 @@ export async function DELETE(request: Request) {
     if (!result.ok) return fail(result.error ?? 'Could not remove that.', result.status ?? 400)
     return ok({ deleted: true })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'collections/comments')
   }
 }

@@ -54,6 +54,6 @@ export async function POST(request: Request) {
 
     return ok({ avatar_url: avatarUrl(path) })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'community/avatar')
   }
 }
