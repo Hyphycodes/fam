@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { VideoFrame } from '@/components/VideoFrame'
+import { DownloadButton } from '@/components/DownloadButton'
 import { fullDate } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
@@ -109,12 +110,15 @@ export function Lightbox({
             Open
           </Link>
           {media.download_url && (
-            <a
-              href={media.download_url}
+            <DownloadButton
+              url={media.download_url}
+              filename={media.download_filename}
+              mimeType={media.mime_type}
+              byteSize={media.byte_size}
               className="rounded-full border border-edge-strong px-4 py-2 text-xs text-paper-soft transition-colors hover:bg-ink-hover hover:text-paper"
             >
               Download
-            </a>
+            </DownloadButton>
           )}
           <button
             ref={closeButton}

@@ -194,6 +194,8 @@ export interface MediaView extends MediaRow {
   iframe_url: string | null
   /** Signed link to the untouched original. */
   download_url: string | null
+  /** The human-legible filename `download_url` should be saved as. */
+  download_filename: string | null
   reaction_count: number
   comment_count: number
   voice_note_count: number
