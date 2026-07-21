@@ -156,7 +156,7 @@ export function VoiceNotes({ mediaId }: { mediaId: string }) {
 
       {recording ? (
         <button onClick={stop} className="btn btn-primary w-full py-3.5">
-          <span className="mr-1 inline-block h-2.5 w-2.5 animate-breathe rounded-full bg-[#1a1105]" />
+          <span className="mr-1 inline-block h-2.5 w-2.5 animate-breathe rounded-full bg-ink" />
           Stop — {formatDuration(elapsed) || '0:00'}
         </button>
       ) : (

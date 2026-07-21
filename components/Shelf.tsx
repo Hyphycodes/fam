@@ -24,17 +24,17 @@ export function Shelf({
   return (
     <div>
       {!hideHeading && (
-        <div className="mb-6 flex items-baseline justify-between gap-4">
+        <div className="mb-3 flex items-baseline justify-between gap-4">
           <div>
-            {subtitle && <p className="eyebrow mb-1.5">{subtitle}</p>}
-            <h2 className="osd rgb-split text-title leading-none text-balance">{title}</h2>
+            {subtitle && <p className="eyebrow mb-1">{subtitle}</p>}
+            <h2 className="text-lg font-medium tracking-[-0.01em] text-balance">{title}</h2>
           </div>
           {href && (
             <Link
               href={href}
-              className="osd shrink-0 text-base text-paper-dim transition-colors hover:text-paper"
+              className="shrink-0 text-xs text-paper-faint transition-colors hover:text-paper"
             >
-              See all ▸
+              All
             </Link>
           )}
         </div>
@@ -42,44 +42,38 @@ export function Shelf({
 
       <div className="shelf pb-2">
         {items.map((media) => (
-          <Link
-            key={media.id}
-            href={`/m/${media.id}`}
-            className="group w-[72vw] max-w-64 sm:w-72 sm:max-w-none"
-          >
-            <div className="relative aspect-[4/5] overflow-hidden rounded-md bg-ink-raised ring-1 ring-edge ring-inset">
+          <div key={media.id} className="w-[58vw] max-w-[16rem] sm:w-[16.5rem] sm:max-w-none">
+            <Link
+              href={`/m/${media.id}`}
+              className="tile block aspect-video"
+              aria-label={
+                media.caption ||
+                `${media.type === 'video' ? 'Video' : 'Photo'} shared by ${media.uploader_name}`
+              }
+            >
               {media.thumb_url ? (
                 <img
                   src={media.thumb_url}
-                  width={media.width ?? undefined}
-                  height={media.height ?? undefined}
-                  alt={
-                    media.caption ||
-                    `${media.type === 'video' ? 'Video' : 'Photo'} shared by ${media.uploader_name}`
-                  }
+                  alt=""
                   loading="lazy"
                   decoding="async"
-                  className="h-full w-full object-cover transition-transform duration-[1200ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105"
                 />
               ) : (
                 <div className="h-full w-full animate-sweep" />
               )}
 
               {media.type === 'video' && (
-                <span className="osd osd-burn absolute top-3 left-3 text-sm">
-                  ▶ PLAY {duration(media.duration_seconds)}
+                <span className="meta-mono absolute right-1.5 bottom-1.5 rounded-[0.25rem] bg-black/65 px-1.5 py-0.5 text-white/90">
+                  {duration(media.duration_seconds) || '▶'}
                 </span>
               )}
+            </Link>
 
-              <span className="osd osd-burn absolute bottom-3 left-3 text-sm">
-                {osdDate(media.taken_at)}
-              </span>
-            </div>
-
-            <p className="hand mt-2.5 truncate text-xl leading-tight text-paper-soft">
+            <p className="mt-1.5 truncate px-0.5 text-[0.8125rem] leading-snug text-paper-soft">
               {media.caption || media.uploader_name}
             </p>
-          </Link>
+            <p className="meta-mono truncate px-0.5">{osdDate(media.taken_at)}</p>
+          </div>
         ))}
       </div>
     </div>

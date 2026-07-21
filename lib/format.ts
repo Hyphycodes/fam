@@ -65,6 +65,15 @@ export function isRecent(input: string | Date, withinMs: number): boolean {
   return Date.now() - date.getTime() < withinMs
 }
 
+/** An index that changes once a day — rotates a daily featured pick. Lives
+ *  here so the clock is never read during render. */
+export function dailyIndex(length: number): number {
+  if (length <= 0) return 0
+  const now = new Date()
+  const start = Date.UTC(now.getUTCFullYear(), 0, 0)
+  return Math.floor((now.getTime() - start) / 86_400_000) % length
+}
+
 export function yearsAgo(input: string | Date): number {
   const date = typeof input === 'string' ? new Date(input) : input
   return new Date().getFullYear() - date.getFullYear()
