@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Lightbox } from '@/components/Lightbox'
 import { Avatar } from '@/components/Avatar'
+import { PeopleStack } from '@/components/PeopleStack'
 import { duration, warmDate } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
@@ -242,6 +243,14 @@ function MemoryCard({
               </>
             )}
           </p>
+          {media.people.length > 0 && (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <PeopleStack people={media.people} size={20} max={5} />
+              <span className="truncate text-xs text-paper-faint">
+                {media.people.map((p) => p.name).join(', ')}
+              </span>
+            </div>
+          )}
         </div>
 
         <Counts media={media} />

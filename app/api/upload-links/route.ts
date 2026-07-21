@@ -27,7 +27,7 @@ export async function GET() {
       })),
     })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'upload-links')
   }
 }
 
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     if (error) return fail(`Could not make that link: ${error.message}`, 500)
     return ok({ link: { ...data, url: `${appUrl()}/add/${token}` } })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'upload-links')
   }
 }
 
@@ -97,6 +97,6 @@ export async function DELETE(request: Request) {
 
     return ok({ revoked: true })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'upload-links')
   }
 }

@@ -28,6 +28,6 @@ export async function GET(request: Request) {
 
     return ok({ media })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'movie')
   }
 }

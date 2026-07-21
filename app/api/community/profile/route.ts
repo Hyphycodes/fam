@@ -21,6 +21,6 @@ export async function POST(request: Request) {
 
     return ok({ display_name: name })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'community/profile')
   }
 }

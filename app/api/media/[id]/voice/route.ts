@@ -48,7 +48,7 @@ export async function GET(
 
     return ok({ notes })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media/voice')
   }
 }
 
@@ -75,7 +75,7 @@ export async function POST(
 
     return ok({ key, putUrl: await presignPut(key, type) })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media/voice')
   }
 }
 
@@ -131,7 +131,7 @@ export async function PUT(
       },
     })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media/voice')
   }
 }
 
@@ -148,6 +148,6 @@ export async function DELETE(request: Request) {
     if (error) return fail(`Could not remove that: ${error.message}`, 500)
     return ok({ deleted: true })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media/voice')
   }
 }

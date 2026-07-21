@@ -1,5 +1,5 @@
 import { fail, handleError, ok, readJson } from '@/lib/api'
-import { getMember } from '@/lib/member'
+import { getViewer } from '@/lib/viewer'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 interface Body {
@@ -10,13 +10,16 @@ interface Body {
 }
 
 /**
- * Post an event to the board. Creating it *is* creating its album — the same
- * collection everyone uploads photos into afterward. Any member can post.
+ * Post an event to the board — or create one inline from a tag/event picker
+ * elsewhere in the app. Creating it *is* creating its album, the same
+ * collection everyone uploads photos into afterward. Either identity works: a
+ * passcode member attributes to `created_by_member`, a legacy account to the
+ * older `created_by`.
  */
 export async function POST(request: Request) {
   try {
-    const member = await getMember()
-    if (!member) return fail('Sign in first.', 401)
+    const viewer = await getViewer()
+    if (!viewer) return fail('Sign in first.', 401)
 
     const body = await readJson<Body>(request)
     const name = (body.name ?? '').trim().slice(0, 140)
@@ -34,7 +37,8 @@ export async function POST(request: Request) {
         description,
         flyer_path: body.flyerPath ?? null,
         kind: 'event',
-        created_by_member: member.id,
+        created_by_member: viewer.kind === 'member' ? viewer.memberId : null,
+        created_by: viewer.kind === 'legacy' ? viewer.id : null,
       })
       .select('id')
       .single()
@@ -42,7 +46,7 @@ export async function POST(request: Request) {
     if (error || !data) return fail(`Could not post that: ${error?.message ?? 'unknown'}`, 500)
     return ok({ id: data.id })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'community/events')
   }
 }
 

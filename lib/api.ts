@@ -17,15 +17,32 @@ export function fail(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status })
 }
 
-export function handleError(error: unknown) {
+/**
+ * `context` names the route ("upload/photo", "media/ready") so a Vercel log
+ * line says where an unhandled error came from instead of just what it was —
+ * the difference between "something threw" and "something to actually go fix".
+ */
+export function handleError(error: unknown, context?: string) {
   const message = error instanceof Error ? error.message : 'Something went wrong.'
+  const tag = context ? `[reel:${context}]` : '[reel]'
+
   // A missing env var is a setup problem, and saying so saves an hour.
   if (/^Missing [A-Z_]+\./.test(message)) {
-    console.error('[reel] configuration error:', message)
+    console.error(`${tag} configuration error:`, message)
     return fail(message, 503)
   }
-  console.error('[reel]', error)
+
+  // Log the full stack, not just the message — Vercel's log viewer renders a
+  // bare `console.error(errorObject)` as an unhelpful one-liner in places.
+  console.error(`${tag} unhandled error:`, error instanceof Error ? error.stack : error)
   return fail('Something went wrong on our side. Try again in a moment.', 500)
+}
+
+/** Logs a Supabase `{ error }` result with enough context to act on, before
+ *  it's turned into the sentence the client sees. `fail()` responses were
+ *  previously invisible server-side — only truly-thrown errors were logged. */
+export function logDbError(context: string, error: { message: string; code?: string }, extra?: Record<string, unknown>) {
+  console.error(`[reel:${context}] db error:`, error.message, error.code ? `(${error.code})` : '', extra ?? '')
 }
 
 /**

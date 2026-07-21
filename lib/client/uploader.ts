@@ -34,11 +34,20 @@ export interface UploadItem {
   error?: string
 }
 
+/** The shared caption/tags/event a batch was given on the upload screen. */
+export interface UploadDetails {
+  caption?: string
+  people?: { name: string }[]
+  eventId?: string | null
+}
+
 export interface UploadContext {
   eventId?: string | null
   /** Present when uploading through a public event link instead of an account. */
   linkToken?: string | null
   uploaderLabel?: string | null
+  /** Applied to every item in this batch the moment its row exists. */
+  details?: UploadDetails
 }
 
 const MAX_CONCURRENT = 2
@@ -162,6 +171,36 @@ export class UploadQueue {
     }
   }
 
+  /**
+   * Applies the batch's shared caption/tags/event, the moment a row exists —
+   * not once bytes finish, so it's set even if someone closes the tab mid
+   * upload. Best-effort: the memory is already safely in the archive either
+   * way, and these can always be added from its detail page.
+   */
+  private async applyDetails(mediaId: string) {
+    const details = this.context.details
+    if (!details) return
+    const caption = details.caption?.trim()
+    const people = details.people?.filter((p) => p.name.trim())
+    const eventId = details.eventId
+
+    const patch: Record<string, unknown> = {}
+    if (caption) patch.caption = caption
+    if (people && people.length > 0) patch.people = people.map((p) => p.name)
+    if (eventId) patch.eventId = eventId
+    if (Object.keys(patch).length === 0) return
+
+    try {
+      await fetch(`/api/media/${mediaId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+    } catch (error) {
+      console.error('[reel] could not apply upload details', { mediaId, error })
+    }
+  }
+
   private async run(item: UploadItem) {
     try {
       this.patch(item.id, { status: 'preparing' })
@@ -195,6 +234,7 @@ export class UploadQueue {
     })
 
     this.patch(item.id, { mediaId, status: 'uploading' })
+    void this.applyDetails(mediaId)
 
     // The original goes up untouched — that's what "download original" hands back.
     const parts: [string, Blob, string][] = [
@@ -205,13 +245,30 @@ export class UploadQueue {
 
     let done = 0
     for (const [url, blob, contentType] of parts) {
-      // Content-Type is part of the signature: send anything else and R2
-      // answers 403 SignatureDoesNotMatch.
-      const response = await fetch(url, {
-        method: 'PUT',
-        body: blob,
-        headers: { 'Content-Type': contentType },
-      })
+      let response: Response
+      try {
+        // Content-Type is part of the signature: send anything else and R2
+        // answers 403 SignatureDoesNotMatch.
+        response = await fetch(url, {
+          method: 'PUT',
+          body: blob,
+          headers: { 'Content-Type': contentType },
+        })
+      } catch (networkError) {
+        // A rejected PUT — not a bad status, an actual thrown error — almost
+        // always means the browser blocked the request before it ever reached
+        // R2. The one common cause: the bucket's CORS policy doesn't allow
+        // this origin/method yet (see SETUP.md → "R2 — CORS"). A real network
+        // outage would have already failed the JSON call a moment earlier.
+        console.error('[reel] photo PUT blocked before reaching storage', {
+          key: url.split('?')[0],
+          contentType,
+          error: networkError,
+        })
+        throw new Error(
+          'Photos could not reach cloud storage — this is almost always a one-time storage setup step (R2 CORS), not your connection. Ask whoever runs the archive to check SETUP.md.',
+        )
+      }
       if (!response.ok) {
         throw new Error(
           response.status === 403
@@ -242,6 +299,7 @@ export class UploadQueue {
     )
 
     this.patch(item.id, { mediaId, status: 'uploading' })
+    void this.applyDetails(mediaId)
 
     await new Promise<void>((resolve, reject) => {
       const upload = new tus.Upload(item.file, {

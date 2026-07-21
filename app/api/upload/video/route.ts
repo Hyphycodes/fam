@@ -1,4 +1,4 @@
-import { fail, handleError, isUploader, ok, readJson, resolveUploader } from '@/lib/api'
+import { fail, handleError, isUploader, logDbError, ok, readJson, resolveUploader } from '@/lib/api'
 import { createDirectUpload } from '@/lib/stream'
 
 interface Body {
@@ -61,11 +61,14 @@ export async function POST(request: Request) {
       .select('id')
       .single()
 
-    if (error) return fail(`Could not start that upload: ${error.message}`, 500)
+    if (error) {
+      logDbError('upload/video', error, { streamUid: uid })
+      return fail(`Could not start that upload: ${error.message}`, 500)
+    }
 
     return ok({ mediaId: data.id, uploadUrl })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'upload/video')
   }
 }
 

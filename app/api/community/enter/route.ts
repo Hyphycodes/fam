@@ -34,6 +34,6 @@ export async function POST(request: Request) {
 
     return ok({ ok: true })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'community/enter')
   }
 }

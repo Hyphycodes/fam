@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { fail, handleError, isUploader, ok, readJson, resolveUploader } from '@/lib/api'
+import { fail, handleError, isUploader, logDbError, ok, readJson, resolveUploader } from '@/lib/api'
 import { buildKey, presignPut } from '@/lib/r2'
 
 interface Body {
@@ -86,17 +86,35 @@ export async function POST(request: Request) {
       status: 'processing',
     })
 
-    if (error) return fail(`Could not start that upload: ${error.message}`, 500)
+    if (error) {
+      logDbError('upload/photo', error, { mediaId })
+      return fail(`Could not start that upload: ${error.message}`, 500)
+    }
 
-    const [original, display, thumb] = await Promise.all([
-      presignPut(keys.original, originalType),
-      presignPut(keys.display, displayType),
-      presignPut(keys.thumb, thumbType),
-    ])
+    // Presigning is pure local HMAC — it should never fail once the row above
+    // succeeded. If it does (a bad key format, a missing R2 credential that
+    // slipped past env validation), that's worth its own log line rather than
+    // falling into the generic catch-all below with no clue which step broke.
+    let put: { original: string; display: string; thumb: string }
+    try {
+      const [signedOriginal, signedDisplay, signedThumb] = await Promise.all([
+        presignPut(keys.original, originalType),
+        presignPut(keys.display, displayType),
+        presignPut(keys.thumb, thumbType),
+      ])
+      put = { original: signedOriginal, display: signedDisplay, thumb: signedThumb }
+    } catch (presignError) {
+      console.error('[reel:upload/photo] could not presign R2 keys', {
+        mediaId,
+        keys,
+        error: presignError instanceof Error ? presignError.stack : presignError,
+      })
+      return fail('Could not prepare that upload for storage. Try again in a moment.', 500)
+    }
 
-    return ok({ mediaId, put: { original, display, thumb } })
+    return ok({ mediaId, put })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'upload/photo')
   }
 }
 

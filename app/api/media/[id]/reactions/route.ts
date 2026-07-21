@@ -11,7 +11,7 @@ export async function GET(
     if (reactions === null) return fail('Not signed in.', 401)
     return ok({ reactions })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media/reactions')
   }
 }
 
@@ -27,6 +27,6 @@ export async function POST(
     if (!result.ok) return fail(result.error ?? 'Could not save that.', result.status ?? 400)
     return ok({ ok: true })
   } catch (error) {
-    return handleError(error)
+    return handleError(error, 'media/reactions')
   }
 }
