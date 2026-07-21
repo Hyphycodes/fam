@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation'
 import { Shell } from '@/components/Shell'
 import { ProfileEditor } from '@/components/ProfileEditor'
 import { requireViewer } from '@/lib/viewer'
-import { getMember } from '@/lib/member'
 import { appName, isConfigured } from '@/lib/env'
 
 export const dynamic = 'force-dynamic'
@@ -13,7 +12,6 @@ export default async function YouPage() {
   if (!isConfigured('supabase')) redirect('/setup')
 
   const viewer = await requireViewer()
-  const member = viewer.kind === 'member' ? await getMember() : null
 
   return (
     <Shell viewer={viewer}>
@@ -25,13 +23,7 @@ export default async function YouPage() {
       </header>
 
       <div className="settings-panel max-w-2xl">
-        {member ? (
-          <ProfileEditor displayName={member.display_name} avatarUrl={member.avatar_url} />
-        ) : (
-          <p className="text-paper-dim">
-            You&rsquo;re signed in by email. Profile photos are for passcode members.
-          </p>
-        )}
+        <ProfileEditor displayName={viewer.display_name} avatarUrl={viewer.avatar_url} />
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { fail, handleError, ok } from '@/lib/api'
-import { getMember } from '@/lib/member'
+import { getViewer } from '@/lib/viewer'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { AVATAR_BUCKET, avatarUrl } from '@/lib/community/avatars'
 
@@ -12,17 +12,18 @@ const TYPES: Record<string, string> = {
 }
 
 /**
- * Set or replace a member's profile picture.
+ * Set or replace a profile picture — any viewer, passcode member or legacy
+ * email account alike.
  *
  * The browser downscales to a small square first, so this only ever handles a
- * couple hundred KB. Upload runs through the service role — a passcode member
- * has no Supabase auth session of their own — into the public avatars bucket at
- * an unguessable path.
+ * couple hundred KB. Upload runs through the service role — neither identity
+ * necessarily has a Supabase auth session of its own here — into the public
+ * avatars bucket at an unguessable path.
  */
 export async function POST(request: Request) {
   try {
-    const member = await getMember()
-    if (!member) return fail('Sign in first.', 401)
+    const viewer = await getViewer()
+    if (!viewer) return fail('Sign in first.', 401)
 
     const form = await request.formData()
     const file = form.get('file')
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
     if (!ext) return fail('Use a JPEG, PNG or WebP.')
 
     const admin = createAdminClient()
-    const path = `${member.id}/${randomUUID()}.${ext}`
+    const path = `${viewer.id}/${randomUUID()}.${ext}`
     const bytes = new Uint8Array(await file.arrayBuffer())
 
     const { error: uploadError } = await admin.storage
@@ -41,15 +42,17 @@ export async function POST(request: Request) {
       .upload(path, bytes, { contentType: file.type, upsert: true })
     if (uploadError) return fail(`Could not save that photo: ${uploadError.message}`, 500)
 
+    const table = viewer.kind === 'member' ? 'members' : 'profiles'
+    const column = viewer.kind === 'member' ? 'avatar_path' : 'avatar_url'
+
     // Best-effort cleanup of the previous file so the bucket doesn't accumulate.
-    if (member.avatar_path && member.avatar_path !== path) {
-      await admin.storage.from(AVATAR_BUCKET).remove([member.avatar_path]).catch(() => {})
+    const { data: current } = await admin.from(table).select(column).eq('id', viewer.id).maybeSingle()
+    const previousPath = (current as Record<string, string | null> | null)?.[column]
+    if (previousPath && previousPath !== path && !/^https?:\/\//.test(previousPath)) {
+      await admin.storage.from(AVATAR_BUCKET).remove([previousPath]).catch(() => {})
     }
 
-    const { error } = await admin
-      .from('members')
-      .update({ avatar_path: path })
-      .eq('id', member.id)
+    const { error } = await admin.from(table).update({ [column]: path }).eq('id', viewer.id)
     if (error) return fail(`Could not save that photo: ${error.message}`, 500)
 
     return ok({ avatar_url: avatarUrl(path) })
