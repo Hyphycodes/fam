@@ -44,6 +44,14 @@ function s3(): S3Client {
       accessKeyId: require_('R2_ACCESS_KEY_ID'),
       secretAccessKey: require_('R2_SECRET_ACCESS_KEY'),
     },
+    // Without this, the SDK's default virtual-hosted-style addressing signs
+    // URLs as `<bucket>.<account-id>.r2.cloudflarestorage.com/<key>`. R2's
+    // S3-compatible API is built around path-style — `<account-id>.r2.
+    // cloudflarestorage.com/<bucket>/<key>` — and virtual-hosted-style
+    // requests are unreliable against it. Confirmed locally: the SDK signs a
+    // perfectly plausible-looking URL either way, so this fails silently
+    // until something actually tries to use it — it never throws here.
+    forcePathStyle: true,
   })
   return client
 }
