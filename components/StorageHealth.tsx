@@ -47,9 +47,9 @@ export function StorageHealth() {
             <p className="text-paper-soft">✓ Storage is configured and Cloudflare answered — photo uploads should work.</p>
           ) : (
             <p className="text-paper-dim">
-              Configured, but Cloudflare rejected the check:{' '}
+              The check did not succeed:{' '}
               <span className="text-paper">{health.error}</span>. Double-check the R2 access
-              key, secret, endpoint and bucket name.
+              key, secret, endpoint and bucket name in Vercel&rsquo;s Environment Variables.
             </p>
           )}
         </div>

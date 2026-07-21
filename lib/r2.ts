@@ -18,10 +18,28 @@ let client: S3Client | null = null
 
 function s3(): S3Client {
   if (client) return client
+  const endpoint = require_('R2_ENDPOINT')
+
+  // The SDK's own failure here is a bare `TypeError: Invalid URL` with no
+  // indication of which env var or what was actually wrong with it — exactly
+  // the kind of dead-end error this codebase keeps tripping over. Catch it
+  // once, here, so every caller (uploads, the health check) gets a message
+  // that names the variable and shows the value that didn't parse.
+  try {
+    new URL(endpoint)
+  } catch {
+    throw new Error(
+      `R2_ENDPOINT is not a valid URL: "${endpoint}". It should look like ` +
+        `https://<account-id>.r2.cloudflarestorage.com — check it in Vercel's ` +
+        `Environment Variables (a missing "https://", a leftover "<...>" ` +
+        `placeholder, or a stray space are the usual causes).`,
+    )
+  }
+
   client = new S3Client({
     // R2 ignores region, but the SDK insists on one.
     region: 'auto',
-    endpoint: require_('R2_ENDPOINT'),
+    endpoint,
     credentials: {
       accessKeyId: require_('R2_ACCESS_KEY_ID'),
       secretAccessKey: require_('R2_SECRET_ACCESS_KEY'),
