@@ -1,0 +1,110 @@
+import 'server-only'
+
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { require_ } from '@/lib/env'
+
+/**
+ * R2 access.
+ *
+ * The bucket is private. Nothing is ever served from a public URL — the app
+ * hands out short-lived signed links, one per file, per view.
+ *
+ * Presigning is pure local HMAC (no network call), so signing a whole page of
+ * feed images costs nothing measurable.
+ */
+
+let client: S3Client | null = null
+
+function s3(): S3Client {
+  if (client) return client
+  client = new S3Client({
+    // R2 ignores region, but the SDK insists on one.
+    region: 'auto',
+    endpoint: require_('R2_ENDPOINT'),
+    credentials: {
+      accessKeyId: require_('R2_ACCESS_KEY_ID'),
+      secretAccessKey: require_('R2_SECRET_ACCESS_KEY'),
+    },
+  })
+  return client
+}
+
+const bucket = () => require_('R2_BUCKET_NAME')
+
+export type Variant = 'original' | 'display' | 'thumb' | 'voice' | 'music'
+
+/**
+ * Object keys are grouped by variant then by date, which keeps the bucket
+ * browsable by a human going through it in five years.
+ */
+export function buildKey(opts: {
+  variant: Variant
+  mediaId: string
+  filename: string
+  takenAt?: Date
+}): string {
+  const when = opts.takenAt ?? new Date()
+  const yyyy = when.getUTCFullYear()
+  const mm = String(when.getUTCMonth() + 1).padStart(2, '0')
+  const safe = sanitizeFilename(opts.filename)
+  return `${opts.variant}/${yyyy}/${mm}/${opts.mediaId}-${safe}`
+}
+
+export function sanitizeFilename(name: string): string {
+  const cleaned = name
+    .normalize('NFKD')
+    .replace(/[^\w.\-]+/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^[._]+/, '')
+  return (cleaned || 'file').slice(-120)
+}
+
+/**
+ * A presigned PUT the phone uses to upload straight to R2.
+ *
+ * `contentType` is part of the signature — the browser MUST send exactly this
+ * same value on the PUT or R2 answers 403 SignatureDoesNotMatch.
+ */
+export function presignPut(
+  key: string,
+  contentType: string,
+  expiresIn = 60 * 30,
+): Promise<string> {
+  return getSignedUrl(
+    s3(),
+    new PutObjectCommand({ Bucket: bucket(), Key: key, ContentType: contentType }),
+    { expiresIn },
+  )
+}
+
+export function presignGet(
+  key: string,
+  opts: { expiresIn?: number; downloadAs?: string } = {},
+): Promise<string> {
+  return getSignedUrl(
+    s3(),
+    new GetObjectCommand({
+      Bucket: bucket(),
+      Key: key,
+      ...(opts.downloadAs
+        ? {
+            ResponseContentDisposition: `attachment; filename="${sanitizeFilename(
+              opts.downloadAs,
+            )}"`,
+          }
+        : {}),
+    }),
+    { expiresIn: opts.expiresIn ?? 60 * 60 },
+  )
+}
+
+/** Signs a batch of keys concurrently, tolerating nulls for a cleaner call site. */
+export async function presignMany(
+  keys: (string | null | undefined)[],
+  expiresIn = 60 * 60,
+): Promise<(string | null)[]> {
+  return Promise.all(
+    keys.map((key) => (key ? presignGet(key, { expiresIn }) : Promise.resolve(null))),
+  )
+}

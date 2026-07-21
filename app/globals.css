@@ -1,0 +1,319 @@
+@import 'tailwindcss';
+
+/* ===========================================================================
+   Reel — a warm dark room, not an interface.
+
+   Everything here leans on three ideas: warm blacks (never blue-grey), an
+   editorial serif doing the talking, and motion slow enough that you notice
+   the memory instead of the animation.
+   =========================================================================== */
+
+@theme {
+  /* Warm blacks. The brown undertone is what stops it reading as "dashboard". */
+  --color-ink: #0a0908;
+  --color-ink-raised: #131110;
+  --color-ink-high: #1c1917;
+  --color-ink-hover: #24201d;
+
+  /* Aged paper, not white. */
+  --color-paper: #f7f2e9;
+  --color-paper-soft: #bcb0a0;
+  --color-paper-dim: #837a6d;
+  --color-paper-faint: #55504a;
+
+  /* One accent: lamplight. */
+  --color-ember: #d99b52;
+  --color-ember-soft: #f0c391;
+  --color-ember-deep: #8a5c28;
+
+  --color-edge: rgba(247, 242, 233, 0.09);
+  --color-edge-strong: rgba(247, 242, 233, 0.16);
+
+  --font-display: var(--font-display-serif), 'Iowan Old Style', Georgia, serif;
+  --font-sans: var(--font-body-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Cinematic scale — display sizes are deliberately a step too big. */
+  --text-display: 4.5rem;
+  --text-display--line-height: 0.95;
+  --text-display--letter-spacing: -0.03em;
+  --text-title: 2.75rem;
+  --text-title--line-height: 1.05;
+  --text-title--letter-spacing: -0.02em;
+
+  --ease-cinema: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-ink);
+    color: var(--color-paper);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Room for the iPhone home indicator + our floating nav. */
+    padding-bottom: env(safe-area-inset-bottom);
+    overscroll-behavior-y: none;
+  }
+
+  ::selection {
+    background: var(--color-ember-deep);
+    color: var(--color-paper);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ember);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  /* Native controls should feel like they belong in the room. */
+  input,
+  textarea,
+  button,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-paper-faint);
+  }
+
+  /* Thin, warm scrollbars instead of the OS default slab. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-edge-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 7px;
+    height: 7px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-edge-strong);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* A very light film grain over the whole app. At 3.5% it reads as texture
+     rather than noise, and it kills the flatness of large dark areas. */
+  .grain::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Warm light pooling at the top of the page. */
+  .lamplight::before {
+    content: '';
+    position: fixed;
+    top: -30vh;
+    left: 50%;
+    width: 120vw;
+    height: 70vh;
+    transform: translateX(-50%);
+    pointer-events: none;
+    z-index: 0;
+    background: radial-gradient(
+      ellipse at center,
+      rgba(217, 155, 82, 0.09) 0%,
+      rgba(217, 155, 82, 0.03) 40%,
+      transparent 70%
+    );
+  }
+
+  .card {
+    background: var(--color-ink-raised);
+    border: 1px solid var(--color-edge);
+    border-radius: 1.25rem;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    transition: all 220ms var(--ease-soft);
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+
+  .btn-primary {
+    background: var(--color-ember);
+    color: #1a1105;
+    font-weight: 600;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-ember-soft);
+    transform: translateY(-1px);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    border-color: var(--color-edge-strong);
+    color: var(--color-paper-soft);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-ink-hover);
+    color: var(--color-paper);
+    border-color: var(--color-paper-faint);
+  }
+
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .field {
+    width: 100%;
+    background: var(--color-ink-high);
+    border: 1px solid var(--color-edge);
+    border-radius: 0.875rem;
+    padding: 0.875rem 1.125rem;
+    transition: border-color 200ms var(--ease-soft);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--color-ember-deep);
+  }
+
+  /* Horizontal shelves — the alternative to a folder tree. */
+  .shelf {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    padding-inline: 1.5rem;
+    margin-inline: -1.5rem;
+  }
+  .shelf::-webkit-scrollbar {
+    display: none;
+  }
+  .shelf > * {
+    scroll-snap-align: start;
+    flex: 0 0 auto;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Entrances. Staggered by inline animation-delay at the call site. */
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .animate-rise {
+    animation: rise 700ms var(--ease-cinema) both;
+  }
+
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .animate-fade {
+    animation: fade 900ms var(--ease-soft) both;
+  }
+
+  /* Movie Mode: four Ken Burns paths so consecutive photos never drift the
+     same way. Slow — 20s — because the point is that you stop noticing it. */
+  @keyframes ken-burns-a {
+    from { transform: scale(1.06) translate(0, 0); }
+    to   { transform: scale(1.18) translate(-1.6%, -1.2%); }
+  }
+  @keyframes ken-burns-b {
+    from { transform: scale(1.18) translate(1.4%, 1%); }
+    to   { transform: scale(1.06) translate(0, 0); }
+  }
+  @keyframes ken-burns-c {
+    from { transform: scale(1.08) translate(1.5%, -0.8%); }
+    to   { transform: scale(1.2) translate(-1%, 1.2%); }
+  }
+  @keyframes ken-burns-d {
+    from { transform: scale(1.2) translate(-1.2%, 1%); }
+    to   { transform: scale(1.07) translate(0.8%, -0.6%); }
+  }
+  .kb-a { animation: ken-burns-a 20s var(--ease-soft) both; }
+  .kb-b { animation: ken-burns-b 20s var(--ease-soft) both; }
+  .kb-c { animation: ken-burns-c 20s var(--ease-soft) both; }
+  .kb-d { animation: ken-burns-d 20s var(--ease-soft) both; }
+
+  @keyframes breathe {
+    0%, 100% { opacity: 0.45; }
+    50%      { opacity: 0.9; }
+  }
+  .animate-breathe {
+    animation: breathe 2.4s ease-in-out infinite;
+  }
+
+  /* Loading placeholder — a slow warm sweep, not a spinner. */
+  @keyframes sweep {
+    from { background-position: -220% 0; }
+    to   { background-position: 320% 0; }
+  }
+  .animate-sweep {
+    background-image: linear-gradient(
+      100deg,
+      var(--color-ink-raised) 30%,
+      var(--color-ink-hover) 50%,
+      var(--color-ink-raised) 70%
+    );
+    background-size: 220% 100%;
+    animation: sweep 2.2s ease-in-out infinite;
+  }
+
+  .hide-scrollbar {
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Someone who asked for less motion should get a still photograph, not a
+   slightly-less-animated one. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .kb-a, .kb-b, .kb-c, .kb-d {
+    animation: none !important;
+    transform: scale(1.04) !important;
+  }
+}
