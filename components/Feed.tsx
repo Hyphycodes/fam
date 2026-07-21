@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Lightbox } from '@/components/Lightbox'
+import { Avatar } from '@/components/Avatar'
 import { duration, warmDate } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
@@ -229,13 +230,14 @@ function MemoryCard({
               {media.caption}
             </p>
           )}
-          <p className="text-sm leading-relaxed text-paper-dim">
-            {media.uploader_name}
-            <span className="mx-2 text-paper-faint">·</span>
+          <p className="flex flex-wrap items-center gap-x-1.5 text-sm leading-relaxed text-paper-dim">
+            <Avatar name={media.uploader_name} src={media.uploader_avatar_url} size={20} />
+            <span className="text-paper-soft">{media.uploader_name}</span>
+            <span className="text-paper-faint">·</span>
             {warmDate(media.taken_at)}
             {media.event_name && (
               <>
-                <span className="mx-2 text-paper-faint">·</span>
+                <span className="text-paper-faint">·</span>
                 {media.event_name}
               </>
             )}

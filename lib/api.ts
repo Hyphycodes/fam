@@ -2,9 +2,8 @@ import 'server-only'
 
 import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getSession } from '@/lib/auth'
+import { getViewer } from '@/lib/viewer'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createClient } from '@/lib/supabase/server'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type DB = SupabaseClient<any, any, any>
@@ -40,7 +39,10 @@ export type Uploader =
   | {
       kind: 'member'
       db: DB
-      uploaderId: string
+      /** Legacy magic-link account id, or null for a passcode member. */
+      uploaderId: string | null
+      /** Passcode member id, or null for a legacy account. */
+      uploaderMember: string | null
       label: null
       eventId: string | null
       linkId: null
@@ -49,6 +51,7 @@ export type Uploader =
       kind: 'link'
       db: DB
       uploaderId: null
+      uploaderMember: null
       label: string
       eventId: string
       linkId: string
@@ -59,13 +62,16 @@ export async function resolveUploader(body: {
   uploaderLabel?: string | null
   eventId?: string | null
 }): Promise<Uploader | { error: string; status: number }> {
-  const session = await getSession()
+  const viewer = await getViewer()
 
-  if (session) {
+  if (viewer) {
+    // Access is already validated; the service role sets attribution explicitly
+    // (a passcode member has no auth.uid() for RLS to key on).
     return {
       kind: 'member',
-      db: await createClient(),
-      uploaderId: session.userId,
+      db: createAdminClient(),
+      uploaderId: viewer.kind === 'legacy' ? viewer.id : null,
+      uploaderMember: viewer.kind === 'member' ? viewer.memberId : null,
       label: null,
       eventId: body.eventId ?? null,
       linkId: null,
@@ -95,6 +101,7 @@ export async function resolveUploader(body: {
     kind: 'link',
     db: admin,
     uploaderId: null,
+    uploaderMember: null,
     label: label || 'A friend of the family',
     // The link decides the event — not the request body.
     eventId: link.event_id,
@@ -116,7 +123,7 @@ export async function canWriteMedia(
 ): Promise<boolean> {
   const { data } = await uploader.db
     .from('media')
-    .select('uploader_id, upload_link_id')
+    .select('uploader_id, uploader_member, upload_link_id')
     .eq('id', mediaId)
     .maybeSingle()
 
@@ -127,12 +134,16 @@ export async function canWriteMedia(
   // member's still-uploading memory as ready.
   if (uploader.kind === 'link') return data.upload_link_id === uploader.linkId
 
-  return data.uploader_id === uploader.uploaderId || (await isOwner())
+  const rowWithMember = data as { uploader_id: string | null; uploader_member?: string | null }
+  const mine = uploader.uploaderMember
+    ? rowWithMember.uploader_member === uploader.uploaderMember
+    : rowWithMember.uploader_id === uploader.uploaderId
+  return mine || (await isOwner())
 }
 
 async function isOwner(): Promise<boolean> {
-  const session = await getSession()
-  return session?.profile.role === 'owner'
+  const viewer = await getViewer()
+  return viewer?.role === 'owner'
 }
 
 /** Parses a JSON body without throwing on empty or malformed input. */

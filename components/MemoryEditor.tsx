@@ -14,10 +14,13 @@ export function MemoryEditor({
   media,
   events,
   canDelete,
+  suggestions = [],
 }: {
   media: MediaView
   events: EventRow[]
   canDelete: boolean
+  /** Member names + previously-used tag names, for quick picking. */
+  suggestions?: string[]
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -117,9 +120,18 @@ export function MemoryEditor({
               onChange={(event) => setPeople(event.target.value)}
               placeholder="Mom, Dee, the twins"
               className="field"
+              list="tag-suggestions"
             />
+            {suggestions.length > 0 && (
+              <datalist id="tag-suggestions">
+                {suggestions.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            )}
             <p className="mt-1.5 text-xs text-paper-faint">
-              Separate names with commas. New names get added to the family list.
+              Separate names with commas. Family members link automatically; new names get
+              added to the list.
             </p>
           </div>
 

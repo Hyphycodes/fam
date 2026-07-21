@@ -69,6 +69,7 @@ export async function POST(request: Request) {
     const { error } = await uploader.db.from('media').insert({
       id: mediaId,
       uploader_id: uploader.uploaderId,
+      uploader_member: uploader.uploaderMember,
       uploader_label: uploader.label,
       upload_link_id: uploader.linkId,
       type: 'photo',

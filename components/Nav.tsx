@@ -4,10 +4,10 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { AddMemoriesButton } from '@/components/AddMemories'
 
-type DockIcon = 'home' | 'browse' | 'movie' | 'family'
+type DockIcon = 'home' | 'browse' | 'board' | 'you'
 
 /** A quiet dock, sized for thumbs and safe areas. State is brightness. */
-export function Nav({ isOwner }: { isOwner: boolean }) {
+export function Nav() {
   return (
     <nav
       aria-label="Primary navigation"
@@ -19,8 +19,8 @@ export function Nav({ isOwner }: { isOwner: boolean }) {
         <NavLink href="/" label="Home" icon="home" />
         <NavLink href="/browse" label="Browse" icon="browse" />
         <AddMemoriesButton />
-        <NavLink href="/movie" label="Movie" icon="movie" />
-        <NavLink href="/settings" label={isOwner ? 'Family' : 'You'} icon="family" />
+        <NavLink href="/community" label="Board" icon="board" />
+        <NavLink href="/you" label="You" icon="you" />
       </div>
     </nav>
   )
@@ -74,19 +74,18 @@ function DockGlyph({ icon, bold }: { icon: DockIcon; bold: boolean }) {
       </svg>
     )
   }
-  if (icon === 'movie') {
+  if (icon === 'board') {
     return (
       <svg {...common}>
-        <rect x="3.75" y="5" width="16.5" height="14" rx="2" />
-        <path d="m10 9 5 3-5 3z" />
+        <rect x="3.75" y="4.75" width="16.5" height="15.5" rx="2" />
+        <path d="M3.75 9h16.5M8 3.5v3M16 3.5v3" />
       </svg>
     )
   }
   return (
     <svg {...common}>
-      <circle cx="9" cy="9" r="3" />
-      <circle cx="16.5" cy="10" r="2.25" />
-      <path d="M3.75 19c.4-3.15 2.15-4.75 5.25-4.75s4.85 1.6 5.25 4.75M14 15.2c2.95-.55 5.1.7 5.75 3.8" />
+      <circle cx="12" cy="8.5" r="3.25" />
+      <path d="M5.5 19.5c.5-3.4 3-5 6.5-5s6 1.6 6.5 5" />
     </svg>
   )
 }

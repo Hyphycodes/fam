@@ -7,11 +7,12 @@ import { Comments } from '@/components/Comments'
 import { VoiceNotes } from '@/components/VoiceNotes'
 import { MemoryEditor } from '@/components/MemoryEditor'
 import { ProcessingWatcher } from '@/components/ProcessingWatcher'
-import { requireSession } from '@/lib/auth'
+import { Avatar } from '@/components/Avatar'
+import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
 import { getEvents, getMediaById } from '@/lib/queries'
 import { reconcileProcessingVideos } from '@/lib/reconcile'
-import { createClient } from '@/lib/supabase/server'
+import { readDb } from '@/lib/db'
 import { fileSize, fullDate } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
@@ -23,22 +24,38 @@ export default async function MemoryPage({
 }) {
   if (!isConfigured('supabase')) redirect('/setup')
 
-  const session = await requireSession()
+  const viewer = await requireViewer()
   const { id } = await params
-  const db = await createClient()
+  const db = readDb()
 
   // If this video finished transcoding after its uploader closed the tab, this
   // is the moment it gets marked ready.
   await reconcileProcessingVideos()
 
-  const [media, events] = await Promise.all([getMediaById(db, id), getEvents(db)])
+  const [media, events, memberRows, peopleRows] = await Promise.all([
+    getMediaById(db, id),
+    getEvents(db),
+    db.from('members').select('display_name'),
+    db.from('people').select('name'),
+  ])
   if (!media) notFound()
 
-  const canDelete =
-    media.uploader_id === session.userId || session.profile.role === 'owner'
+  // Members + previously-used names, for the tag picker.
+  const tagSuggestions = [
+    ...new Set([
+      ...((memberRows.data ?? []) as { display_name: string }[]).map((m) => m.display_name),
+      ...((peopleRows.data ?? []) as { name: string }[]).map((p) => p.name),
+    ]),
+  ].sort()
+
+  const mine =
+    viewer.kind === 'member'
+      ? media.uploader_member === viewer.memberId
+      : media.uploader_id === viewer.id
+  const canDelete = mine || viewer.role === 'owner'
 
   return (
-    <Shell session={session}>
+    <Shell viewer={viewer}>
       <article className="mt-6">
         {/* Refreshes this page the moment Cloudflare finishes the transcode. */}
         {media.status === 'processing' && <ProcessingWatcher mediaId={media.id} />}
@@ -72,37 +89,37 @@ export default async function MemoryPage({
               {media.caption}
             </h1>
           )}
-          <p className={`text-paper-dim ${media.caption ? 'mt-3' : ''}`}>
-            {media.uploader_name}
-            <span className="mx-2 text-paper-faint">·</span>
+          <div className={`flex flex-wrap items-center gap-x-1.5 text-paper-dim ${media.caption ? 'mt-3' : ''}`}>
+            <Avatar name={media.uploader_name} src={media.uploader_avatar_url} size={24} />
+            <span className="text-paper-soft">{media.uploader_name}</span>
+            <span className="text-paper-faint">·</span>
             {fullDate(media.taken_at)}
             {media.event_name && media.event_id && (
               <>
-                <span className="mx-2 text-paper-faint">·</span>
+                <span className="text-paper-faint">·</span>
                 <Link
-                  href={`/collection/event/${media.event_id}`}
+                  href={`/community/${media.event_id}`}
                   className="transition-colors hover:text-paper"
                 >
                   {media.event_name}
                 </Link>
               </>
             )}
-          </p>
+          </div>
 
           {media.people.length > 0 && (
-            <p className="mt-2 text-sm text-paper-dim">
-              {media.people.map((person, index) => (
-                <span key={person.id}>
-                  {index > 0 && <span className="text-paper-faint">, </span>}
-                  <Link
-                    href={`/collection/person/${person.id}`}
-                    className="transition-colors hover:text-paper"
-                  >
-                    {person.name}
-                  </Link>
-                </span>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {media.people.map((person) => (
+                <Link
+                  key={person.id}
+                  href={`/collection/person/${person.id}`}
+                  className="flex items-center gap-1.5 rounded-full border border-edge py-1 pr-3 pl-1 text-sm text-paper-soft transition-colors hover:border-edge-strong hover:text-paper"
+                >
+                  <Avatar name={person.name} src={person.avatar_url} size={22} />
+                  {person.name}
+                </Link>
               ))}
-            </p>
+            </div>
           )}
         </header>
 
@@ -118,10 +135,15 @@ export default async function MemoryPage({
         </div>
 
         <div className="mt-10 space-y-12 border-t border-edge pt-10">
-          <Reactions mediaId={media.id} userId={session.userId} />
-          <VoiceNotes mediaId={media.id} />
-          <Comments mediaId={media.id} userId={session.userId} />
-          <MemoryEditor media={media} events={events} canDelete={canDelete} />
+          <Reactions mediaId={media.id} />
+          {viewer.kind === 'legacy' && <VoiceNotes mediaId={media.id} />}
+          <Comments mediaId={media.id} />
+          <MemoryEditor
+            media={media}
+            events={events}
+            canDelete={canDelete}
+            suggestions={tagSuggestions}
+          />
         </div>
       </article>
     </Shell>

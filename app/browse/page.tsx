@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Shell } from '@/components/Shell'
 import { Shelf } from '@/components/Shelf'
-import { requireSession } from '@/lib/auth'
+import { requireViewer } from '@/lib/viewer'
 import { fullDate } from '@/lib/format'
 import { isConfigured } from '@/lib/env'
 import {
@@ -13,7 +13,7 @@ import {
   getPeople,
   getYears,
 } from '@/lib/queries'
-import { createClient } from '@/lib/supabase/server'
+import { readDb } from '@/lib/db'
 import type { MediaView } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -22,8 +22,8 @@ export const dynamic = 'force-dynamic'
 export default async function BrowsePage() {
   if (!isConfigured('supabase')) redirect('/setup')
 
-  const session = await requireSession()
-  const db = await createClient()
+  const viewer = await requireViewer()
+  const db = readDb()
 
   const [newThisWeek, favorites, people, events, years] = await Promise.all([
     getNewThisWeek(db),
@@ -36,15 +36,13 @@ export default async function BrowsePage() {
   const total = years.reduce((sum, entry) => sum + entry.count, 0)
 
   return (
-    <Shell session={session}>
-      <header className="browse-intro mt-8 mb-14 sm:mt-14 sm:mb-20">
-        <p className="eyebrow">Wander the archive</p>
-        <h1 className="mt-4 max-w-3xl font-display text-[clamp(3.5rem,9vw,6.75rem)] leading-[0.88] tracking-[-0.035em] text-balance">
-          Every face opens
-          <br />
-          <span className="text-paper-dim italic">another chapter.</span>
+    <Shell viewer={viewer}>
+      <header className="browse-intro mt-8 mb-12 sm:mt-14 sm:mb-16">
+        <p className="eyebrow">Browse</p>
+        <h1 className="mt-3 max-w-3xl text-[clamp(2.5rem,8vw,4.5rem)] font-semibold leading-[0.95] tracking-[-0.035em] text-balance">
+          Every face opens another chapter.
         </h1>
-        <p className="mt-7 max-w-xl text-base leading-relaxed text-paper-soft sm:text-lg">
+        <p className="mt-5 max-w-xl text-base leading-relaxed text-paper-soft">
           Find the newest additions, gather around the people and days that shaped the
           family, or step back through the years.
         </p>
