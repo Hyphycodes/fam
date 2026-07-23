@@ -143,6 +143,7 @@ export function Timeline({
   events,
   artifacts,
   people,
+  initialType = null,
 }: {
   initialMedia: MediaView[]
   initialCursor: TimelineCursor | null
@@ -150,13 +151,14 @@ export function Timeline({
   events: TimelineEvent[]
   artifacts: TimelineArtifact[]
   people: { id: string; name: string }[]
+  initialType?: 'photo' | 'video' | null
 }) {
   const [media, setMedia] = useState(initialMedia)
   const [cursor, setCursor] = useState<TimelineCursor | null>(initialCursor)
   const [done, setDone] = useState(initialCursor === null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [type, setType] = useState<'photo' | 'video' | null>(null)
+  const [type, setType] = useState<'photo' | 'video' | null>(initialType)
   const [personId, setPersonId] = useState<string | null>(null)
 
   const filtered = type !== null || personId !== null

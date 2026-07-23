@@ -86,7 +86,8 @@ export async function getMediaById(db: DB, id: string): Promise<MediaView | null
   return view ?? null
 }
 
-/** Memories from this day in earlier years. */
+/** Memories from this day in earlier years. Approximate dates (year/month
+ *  precision) are excluded — an anniversary claim needs day-level confidence. */
 export async function getOnThisDay(db: DB): Promise<MediaView[]> {
   const now = new Date()
   const { data, error } = await db
@@ -96,6 +97,7 @@ export async function getOnThisDay(db: DB): Promise<MediaView[]> {
     .eq('taken_month', now.getMonth() + 1)
     .eq('taken_day', now.getDate())
     .neq('taken_year', now.getFullYear())
+    .in('taken_precision', ['exact', 'day'])
     .order('taken_at', { ascending: false })
     .limit(24)
 
