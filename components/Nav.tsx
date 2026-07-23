@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { AddMemoriesButton } from '@/components/AddMemories'
 
-type DockIcon = 'home' | 'browse' | 'board' | 'you'
+type DockIcon = 'home' | 'timeline' | 'board' | 'you'
 
 /** A quiet dock, sized for thumbs and safe areas. State is brightness. */
 export function Nav() {
@@ -18,10 +18,10 @@ export function Nav() {
       <div className="relative flex items-center gap-0.5 rounded-full border border-white/10 bg-[#141414]/92 p-1.5 shadow-[0_18px_60px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl">
         <NavLink href="/" label="Home" icon="home" />
         <NavLink
-          href="/browse"
-          label="Browse"
-          icon="browse"
-          activePrefixes={['/browse', '/albums', '/collection']}
+          href="/timeline"
+          label="Timeline"
+          icon="timeline"
+          activePrefixes={['/timeline', '/browse', '/albums', '/collection']}
         />
         <AddMemoriesButton />
         <NavLink href="/community" label="Board" icon="board" />
@@ -82,11 +82,15 @@ function DockGlyph({ icon, bold }: { icon: DockIcon; bold: boolean }) {
       </svg>
     )
   }
-  if (icon === 'browse') {
+  if (icon === 'timeline') {
     return (
       <svg {...common}>
-        <circle cx="12" cy="12" r="8.25" />
-        <path d="m14.9 8.6-1.8 4.5-4.5 1.8 1.8-4.5z" />
+        <circle cx="5" cy="6" r="1.4" />
+        <path d="M9 6h10" />
+        <circle cx="5" cy="12" r="1.4" />
+        <path d="M9 12h10" />
+        <circle cx="5" cy="18" r="1.4" />
+        <path d="M9 18h6" />
       </svg>
     )
   }

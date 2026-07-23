@@ -311,7 +311,7 @@ if (tags[0].n === 0) pass('Tags can actually be removed')
 else fail('media_people DELETE is a silent no-op — re-tagging will break')
 
 const { rows: versions } = await db.query(`select public.reel_schema_version() as version`)
-if (versions[0].version === 9) pass('Production readiness can identify schema version 9')
+if (versions[0].version === 10) pass('Production readiness can identify schema version 10')
 else fail(`Unexpected schema version: ${versions[0].version}`)
 
 // ---------------------------------------------------------------------------
@@ -376,6 +376,25 @@ const { rows: sameNames } = await db.query(
 )
 if (sameNames[0].n === 2) pass('Two relatives with the same name keep separate identities')
 else fail('Person tags still collapse relatives who share a display name')
+
+// timeline_month_counts() groups ready media by (year, month) server-side.
+// Use an isolated year so earlier fixtures don't bleed into the assertion.
+await db.exec(`insert into public.media (id, uploader_id, type, r2_key, taken_at, status, content_hash)
+  values
+    ('a0000000-0000-0000-0000-000000000001','11111111-1111-1111-1111-111111111111',
+     'photo','originals/t1.jpg','2011-03-05T12:00:00Z','ready','d000000000000000000000000000000000000000000000000000000000000001'),
+    ('a0000000-0000-0000-0000-000000000002','11111111-1111-1111-1111-111111111111',
+     'photo','originals/t2.jpg','2011-03-20T12:00:00Z','ready','d000000000000000000000000000000000000000000000000000000000000002'),
+    ('a0000000-0000-0000-0000-000000000003','11111111-1111-1111-1111-111111111111',
+     'photo','originals/t3.jpg','2011-03-30T12:00:00Z','processing','d000000000000000000000000000000000000000000000000000000000000003')`)
+const { rows: buckets } = await db.query(
+  `select year, month, n from public.timeline_month_counts() where year = 2011`,
+)
+if (buckets.length === 1 && buckets[0].month === 3 && buckets[0].n === 2) {
+  pass('timeline_month_counts() groups ready media by month (and excludes processing)')
+} else {
+  fail(`timeline_month_counts() wrong: ${JSON.stringify(buckets)}`)
+}
 
 await db.close()
 

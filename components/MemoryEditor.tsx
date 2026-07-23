@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { PersonTagPicker, type TagChip } from '@/components/PersonTagPicker'
 import { EventPicker } from '@/components/EventPicker'
 import { PhotoRecropButton } from '@/components/PhotoRecropButton'
@@ -24,7 +24,17 @@ export function MemoryEditor({
   canDelete: boolean
 }) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const searchParams = useSearchParams()
+  // The timeline's "date approximate" tiles link here with ?edit=date to drop
+  // the viewer straight onto the editor — one tap from fixing a soft date.
+  const editParam = searchParams.get('edit')
+  const [open, setOpen] = useState(() => editParam !== null)
+  const sectionRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (editParam !== null) sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // Only on first mount, when arriving via the edit deep-link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [caption, setCaption] = useState(media.caption ?? '')
   const [eventId, setEventId] = useState(media.event_id ?? '')
   const [people, setPeople] = useState<TagChip[]>(
@@ -106,7 +116,7 @@ export function MemoryEditor({
   }
 
   return (
-    <section>
+    <section ref={sectionRef}>
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
