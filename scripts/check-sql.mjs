@@ -313,8 +313,87 @@ if (tags[0].n === 0) pass('Tags can actually be removed')
 else fail('media_people DELETE is a silent no-op — re-tagging will break')
 
 const { rows: versions } = await db.query(`select public.reel_schema_version() as version`)
-if (versions[0].version === 14) pass('Production readiness can identify schema version 14')
+if (versions[0].version === 16) pass('Production readiness can identify schema version 16')
 else fail(`Unexpected schema version: ${versions[0].version}`)
+
+// ---------------------------------------------------------------------------
+// Focal points (0015)
+// ---------------------------------------------------------------------------
+console.log('\nFocal points')
+
+// A fresh row lands dead-center with an unknown (default) source.
+await db.exec(`insert into public.media (id, uploader_id, type, r2_key, taken_at, status, content_hash)
+  values ('fc000000-0000-0000-0000-000000000001',
+          '11111111-1111-1111-1111-111111111111',
+          'photo', 'originals/focal.jpg', '2018-08-08T09:30:00Z', 'ready',
+          'fc00000000000000000000000000000000000000000000000000000000000001')`)
+const { rows: focalDefaults } = await db.query(
+  `select focal_x, focal_y, focal_source from public.media
+    where id = 'fc000000-0000-0000-0000-000000000001'`,
+)
+if (
+  focalDefaults[0].focal_x === 0.5 &&
+  focalDefaults[0].focal_y === 0.5 &&
+  focalDefaults[0].focal_source === 'default'
+) {
+  pass('New media defaults to a centered focal point')
+} else {
+  fail(`Wrong focal defaults: ${JSON.stringify(focalDefaults[0])}`)
+}
+
+// The range check keeps a focal point inside the frame.
+try {
+  await db.exec(`update public.media set focal_x = 1.4
+    where id = 'fc000000-0000-0000-0000-000000000001'`)
+  fail('focal_x accepted a value outside 0..1')
+} catch {
+  pass('focal_x/focal_y reject values outside 0..1')
+}
+
+// A person's placement (source='user') survives a re-run of the backfill.
+await db.exec(`update public.media
+    set focal_source = 'user', focal_x = 0.3, focal_y = 0.2
+  where id = 'fc000000-0000-0000-0000-000000000001'`)
+const focalBackfill = await readFile(path.join(migrationsDir, '0015_focal_points.sql'), 'utf8')
+await db.exec(focalBackfill)
+const { rows: focalPreserved } = await db.query(
+  `select focal_x, focal_y, focal_source from public.media
+    where id = 'fc000000-0000-0000-0000-000000000001'`,
+)
+if (
+  focalPreserved[0].focal_source === 'user' &&
+  focalPreserved[0].focal_x === 0.3 &&
+  focalPreserved[0].focal_y === 0.2
+) {
+  pass('Re-running the focal backfill never overwrites a user focal point')
+} else {
+  fail(`Focal backfill clobbered a user placement: ${JSON.stringify(focalPreserved[0])}`)
+}
+
+// ---------------------------------------------------------------------------
+// Event editing provenance (0016)
+// ---------------------------------------------------------------------------
+console.log('\nEvent editing')
+
+await db.exec(`insert into public.events (id, name, event_date) values
+  ('ed000000-0000-0000-0000-000000000001', 'Editable', '2020-05-01')`)
+await db.exec(`update public.events
+    set name = 'Corrected', last_edited_at = now(),
+        last_edited_by = '11111111-1111-1111-1111-111111111111'
+  where id = 'ed000000-0000-0000-0000-000000000001'`)
+const { rows: editedEvent } = await db.query(
+  `select name, last_edited_at is not null as touched, last_edited_by
+     from public.events where id = 'ed000000-0000-0000-0000-000000000001'`,
+)
+if (
+  editedEvent[0].name === 'Corrected' &&
+  editedEvent[0].touched === true &&
+  editedEvent[0].last_edited_by === '11111111-1111-1111-1111-111111111111'
+) {
+  pass('An event field edit records who last touched it and when')
+} else {
+  fail(`Event editing provenance wrong: ${JSON.stringify(editedEvent[0])}`)
+}
 
 // ---------------------------------------------------------------------------
 // One event model (0014)

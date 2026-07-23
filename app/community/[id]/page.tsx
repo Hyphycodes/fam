@@ -6,7 +6,7 @@ import { Reactions } from '@/components/Reactions'
 import { Comments } from '@/components/Comments'
 import { Avatar } from '@/components/Avatar'
 import { AddMemoriesButton } from '@/components/AddMemories'
-import { EventLifecycle } from '@/components/EventLifecycle'
+import { EventEditor } from '@/components/EventEditor'
 import { Artifacts } from '@/components/Artifacts'
 import { Soundtrack } from '@/components/Soundtrack'
 import { requireViewer } from '@/lib/viewer'
@@ -16,7 +16,7 @@ import { getCollectionById } from '@/lib/community/events'
 import { getArtifacts } from '@/lib/community/artifacts'
 import { getSoundtrack } from '@/lib/community/soundtrack'
 import { getFeed } from '@/lib/queries'
-import { fullDate } from '@/lib/format'
+import { fullDate, warmDate } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 
@@ -90,6 +90,11 @@ export default async function EventPage({
           <p className="mt-3 flex items-center gap-2 text-sm text-paper-dim">
             <Avatar name={event.host_name} src={event.host_avatar_url} size={24} />
             {planned ? 'Planned by' : 'Posted by'} {event.host_name}
+            {event.editor_name && event.last_edited_at && (
+              <span className="text-paper-faint">
+                · edited {warmDate(event.last_edited_at).toLowerCase()} by {event.editor_name}
+              </span>
+            )}
           </p>
         )}
         {event.description && (
@@ -99,7 +104,16 @@ export default async function EventPage({
         )}
 
         <div className="mt-6">
-          <EventLifecycle eventId={event.id} status={event.status} canRevert={viewer.role === 'owner'} />
+          <EventEditor
+            event={event}
+            covers={media.map((item) => ({
+              id: item.id,
+              thumb: item.thumb_url ?? item.display_url,
+              focalX: item.focal_x,
+              focalY: item.focal_y,
+            }))}
+            canRevert={viewer.role === 'owner'}
+          />
         </div>
       </header>
 

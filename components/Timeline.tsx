@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { duration, formatCapturedAt, fullDate, isEmojiOnly } from '@/lib/format'
+import { duration, focalPosition, formatCapturedAt, fullDate, isEmojiOnly } from '@/lib/format'
 import { EventCover } from '@/components/EventCover'
 import type { MediaView } from '@/lib/types'
 import type { MonthCount, TimelineArtifact, TimelineCursor, TimelineEvent } from '@/lib/timeline'
@@ -446,16 +446,21 @@ export function Timeline({
                 else yearRefs.current.delete(yg.year)
               }}
             >
-              <div className="sticky top-14 z-20 -mx-5 flex items-center justify-between gap-3 bg-ink/92 px-5 py-2 pr-10 backdrop-blur sm:-mx-6 sm:px-6 sm:pr-11">
-                <h2 className="font-display text-3xl tracking-[-0.02em] text-paper">{yg.year}</h2>
-                {(yg.band.length > 0 || yg.months.some((m) => m.grid.length + m.band.length > 0)) && (
-                  <Link
-                    href={`/movie?source=year&year=${yg.year}&mode=full`}
-                    className="shrink-0 rounded-full border border-edge px-3 py-1 text-xs text-paper-dim transition-colors hover:border-edge-strong hover:text-paper"
-                  >
-                    ▸ Play {yg.year}
-                  </Link>
-                )}
+              <div className="sticky top-14 z-20 -mx-5 overflow-hidden sm:-mx-6">
+                <YearMosaic urls={yearMosaic(yg)} />
+                <div className="relative flex items-center justify-between gap-3 px-5 py-3 pr-10 sm:px-6 sm:pr-11">
+                  <h2 className="font-display text-3xl tracking-[-0.02em] text-white [text-shadow:0_1px_10px_rgba(0,0,0,0.6)]">
+                    {yg.year}
+                  </h2>
+                  {(yg.band.length > 0 || yg.months.some((m) => m.grid.length + m.band.length > 0)) && (
+                    <Link
+                      href={`/movie?source=year&year=${yg.year}&mode=full`}
+                      className="shrink-0 rounded-full border border-white/25 bg-black/30 px-3 py-1 text-xs text-white/90 backdrop-blur-sm transition-colors hover:border-white/50 hover:text-white"
+                    >
+                      ▸ Play {yg.year}
+                    </Link>
+                  )}
+                </div>
               </div>
 
               <div className="pr-7">
@@ -635,6 +640,53 @@ function estimateHeight(mg: MonthGroup): number {
   return 60 + mg.events.length * 210 + (mg.artifacts.length ? 48 : 0) + rows * 128
 }
 
+/** Up to four thumbnails from a year's already-loaded content — the year
+ *  header's cover band. Pulled from grids, event previews, and bands, so a year
+ *  looks like a year and it costs no extra request. */
+function yearMosaic(yg: YearGroup): string[] {
+  const urls: string[] = []
+  const push = (url?: string | null) => {
+    if (url && urls.length < 4 && !urls.includes(url)) urls.push(url)
+  }
+  for (const item of yg.band) push(item.thumb_url ?? item.display_url)
+  for (const mg of yg.months) {
+    for (const item of mg.grid) push(item.thumb_url ?? item.display_url)
+    for (const event of mg.events) for (const preview of event.preview) push(preview)
+    for (const item of mg.band) push(item.thumb_url ?? item.display_url)
+    if (urls.length >= 4) break
+  }
+  return urls
+}
+
+function YearMosaic({ urls }: { urls: string[] }) {
+  if (urls.length === 0) {
+    return <div className="absolute inset-0 bg-ink/92 backdrop-blur" />
+  }
+  return (
+    <>
+      <div
+        className="absolute inset-0 grid"
+        style={{ gridTemplateColumns: `repeat(${Math.min(urls.length, 4)}, 1fr)` }}
+        aria-hidden="true"
+      >
+        {urls.slice(0, 4).map((url, index) => (
+          <span key={index} className="relative overflow-hidden bg-ink-high">
+            <img
+              src={url}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          </span>
+        ))}
+      </div>
+      {/* Dark wash so the numeral and Play button stay legible over any photo. */}
+      <div className="absolute inset-0 bg-gradient-to-r from-ink/92 via-ink/78 to-ink/62" />
+    </>
+  )
+}
+
 function Grid({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">{children}</div>
 }
@@ -653,6 +705,7 @@ function Tile({ media, approximate }: { media: MediaView; approximate?: boolean 
           alt={media.caption || ''}
           loading="lazy"
           decoding="async"
+          style={{ objectPosition: focalPosition(media) }}
           className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
         />
       ) : (

@@ -11,13 +11,29 @@ export function EventCover({
   src,
   name,
   className = '',
+  focalX,
+  focalY,
 }: {
   src: string | null
   name: string
   className?: string
+  /** Focal point 0..1 of the cover, when it came from a media frame. */
+  focalX?: number
+  focalY?: number
 }) {
   if (src) {
-    return <img src={src} alt="" loading="lazy" decoding="async" className={className} />
+    const position =
+      focalX != null && focalY != null ? `${focalX * 100}% ${focalY * 100}%` : undefined
+    return (
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className={className}
+        style={position ? { objectPosition: position } : undefined}
+      />
+    )
   }
 
   const hue = hueFromName(name)

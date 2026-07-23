@@ -113,6 +113,8 @@ function PlannedCard({ event }: { event: BoardEvent }) {
           src={event.flyer_url ?? event.cover_url}
           name={event.name}
           className="absolute inset-0 h-full w-full object-cover"
+          focalX={event.flyer_url ? undefined : event.cover_focal_x}
+          focalY={event.flyer_url ? undefined : event.cover_focal_y}
         />
         <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 p-4">
@@ -152,6 +154,8 @@ function PastCard({ event }: { event: BoardEvent }) {
           src={event.cover_url ?? event.flyer_url}
           name={event.name}
           className="absolute inset-0 h-full w-full object-cover"
+          focalX={event.cover_url ? event.cover_focal_x : undefined}
+          focalY={event.cover_url ? event.cover_focal_y : undefined}
         />
         <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 p-3">

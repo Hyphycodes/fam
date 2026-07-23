@@ -10,9 +10,9 @@ import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
 import { reconcileProcessingVideos } from '@/lib/reconcile'
 import { readDb } from '@/lib/db'
-import { getHomeData } from '@/lib/home'
+import { getHomeData, type HomeData, type RecentEntry } from '@/lib/home'
 import { fullDate } from '@/lib/format'
-import type { BoardEvent, MediaView } from '@/lib/types'
+import type { BoardEvent } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -76,13 +76,17 @@ export default async function HomePage() {
 
         {home.recentlyAdded.length > 0 && (
           <Rail title="Recently added">
-            {home.recentlyAdded.map((media) => (
-              <MediaTile key={media.id} media={media} />
-            ))}
+            {home.recentlyAdded.map((entry) =>
+              entry.kind === 'media' ? (
+                <MediaTile key={entry.media.id} media={entry.media} />
+              ) : (
+                <RecentEventTile key={entry.id} entry={entry} />
+              ),
+            )}
           </Rail>
         )}
 
-        {home.hasMedia && <FamilyTV cover={home.recentlyAdded[0] ?? home.featured} />}
+        {home.hasMedia && <FamilyTV cover={familyTvCover(home)} />}
 
         <section aria-labelledby="collections">
           <Heading id="collections" eyebrow="The archive" title="Collections" />
@@ -184,8 +188,46 @@ function YearCard({ year, count }: { year: number; count: number }) {
   )
 }
 
-function FamilyTV({ cover }: { cover: MediaView | null }) {
-  const still = cover?.thumb_url ?? cover?.display_url
+/** One "Recently added" tile for an event that just gained a batch — one card
+ *  with a count, not a flood of individual photos. */
+function RecentEventTile({ entry }: { entry: Extract<RecentEntry, { kind: 'event' }> }) {
+  return (
+    <div className="w-[58vw] max-w-[16rem] sm:w-[16.5rem] sm:max-w-none">
+      <Link
+        href={`/community/${entry.id}`}
+        className="tile block aspect-video"
+        aria-label={`${entry.name}, ${entry.addedCount} added`}
+      >
+        {entry.cover ? (
+          <img
+            src={entry.cover}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            style={{ objectPosition: `${entry.focalX * 100}% ${entry.focalY * 100}%` }}
+          />
+        ) : (
+          <EventCover src={null} name={entry.name} className="h-full w-full" />
+        )}
+        <span className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 to-transparent" />
+        <span className="absolute inset-x-2 bottom-1.5 truncate text-sm font-medium text-white">
+          {entry.name}
+        </span>
+      </Link>
+      <p className="meta-mono mt-1.5 px-0.5">{entry.addedCount} added</p>
+    </div>
+  )
+}
+
+/** A single representative still for the Family TV card — whatever's freshest. */
+function familyTvCover(home: HomeData): string | null {
+  const first = home.recentlyAdded[0]
+  if (first) return first.kind === 'media' ? (first.media.thumb_url ?? first.media.display_url) : first.cover
+  return home.featured?.image ?? home.collections.photos[0] ?? home.collections.video ?? null
+}
+
+function FamilyTV({ cover }: { cover: string | null }) {
+  const still = cover
   return (
     <Link
       href="/movie?source=archive&mode=shuffle"

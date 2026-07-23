@@ -3,50 +3,99 @@ import 'server-only'
 import type { DB } from '@/lib/api'
 import { getBoardEvents } from '@/lib/community/events'
 import { getFeed, getOnThisDay, getYears } from '@/lib/queries'
-import { dailyIndex } from '@/lib/format'
+import { dailyIndex, formatCapturedAt, fullDate, season } from '@/lib/format'
 import { presignGet } from '@/lib/r2'
 import { isConfigured } from '@/lib/env'
 import type { BoardEvent, MediaView } from '@/lib/types'
 
 /**
- * The front door's data, assembled with two rules that matter more than any
- * rail:
+ * The front door's data.
  *
- *   1. Global de-dup. A memory shown in one section is ineligible for the
- *      sections below it, walked top to bottom in render order — so nothing
- *      appears twice on one page.
- *   2. Graceful thinness. A media rail with fewer than two fresh items hides
- *      itself. Fewer, fuller rails; the page gets denser as the archive grows
- *      instead of repeating harder when it's sparse.
- *
- * A handful of parallel reads, not eight independent fetches.
+ * Three rules run through it:
+ *   1. The Featured hero models the *subject* separately from the *cover* — so a
+ *      hero labeled "Father's Day 2023" opens the event, not one stray photo.
+ *   2. Recently added groups by event — 45 photos dropped into one event is one
+ *      card ("… · 45 added"), not a flood.
+ *   3. Graceful thinness — a rail with fewer than two fresh items hides itself.
  */
+
+/** A hero candidate: what it's *about* (subject) is decoupled from the image
+ *  that represents it (cover), so the label and the click always agree. */
+export interface FeaturedItem {
+  subjectType: 'event' | 'media'
+  subjectId: string
+  title: string
+  dateLabel: string
+  /** Where the button goes — the event, or the photo. */
+  href: string
+  image: string | null
+  width: number | null
+  height: number | null
+  focalX: number
+  focalY: number
+}
+
+/** One row of "Recently added": a lone photo, or an event that just gained a
+ *  batch (shown once, with a count, never as a flood of tiles). */
+export type RecentEntry =
+  | { kind: 'media'; media: MediaView }
+  | {
+      kind: 'event'
+      id: string
+      name: string
+      addedCount: number
+      cover: string | null
+      focalX: number
+      focalY: number
+    }
 
 export interface HomeData {
   /** The server's first-paint pick (stable within a day) — the SSR frame. */
-  featured: MediaView | null
+  featured: FeaturedItem | null
   /** The weighted candidate set the client rotates through, never repeating. */
-  featuredPool: MediaView[]
+  featuredPool: FeaturedItem[]
   onThisDay: MediaView[]
   comingUp: BoardEvent[]
   jumpBack: { year: number; count: number }[]
-  recentlyAdded: MediaView[]
+  recentlyAdded: RecentEntry[]
   hasMedia: boolean
   /** Real covers for the Collections tiles, so none of them renders grey. */
   collections: {
-    /** Up to four recent photo thumbs — a mosaic that says "many". */
     photos: string[]
-    /** The most recent video's poster. */
     video: string | null
-    /** The most recent flyer. */
     artifact: string | null
   }
 }
 
 const FEATURED_POOL_SIZE = 16
+const HERO_ASPECT = 16 / 9
+
+const highPrecision = (media: MediaView) =>
+  media.taken_precision === 'exact' || media.taken_precision === 'day'
 
 function thumbOf(media: MediaView): string | null {
   return media.thumb_url ?? media.display_url
+}
+function heroImage(media: MediaView): string | null {
+  return media.display_url ?? media.thumb_url
+}
+
+/** Closeness of an item's aspect to the 16:9 hero — 1 at 16:9, falling off
+ *  either side. Unknown dimensions read as mildly landscape. */
+function landscapeScore(media: MediaView): number {
+  const aspect = media.width && media.height ? media.width / media.height : 1.4
+  return 1 / (1 + Math.abs(aspect - HERO_ASPECT))
+}
+
+function uniqueById(items: MediaView[]): MediaView[] {
+  const seen = new Set<string>()
+  const out: MediaView[] = []
+  for (const item of items) {
+    if (seen.has(item.id)) continue
+    seen.add(item.id)
+    out.push(item)
+  }
+  return out
 }
 
 /** The most recent flyer (or scanned doc), presigned — the Artifacts tile's cover. */
@@ -63,20 +112,6 @@ async function recentFlyer(db: DB): Promise<string | null> {
   return key ? presignGet(key) : null
 }
 
-const highPrecision = (media: MediaView) =>
-  media.taken_precision === 'exact' || media.taken_precision === 'day'
-
-function uniqueById(items: MediaView[]): MediaView[] {
-  const seen = new Set<string>()
-  const out: MediaView[] = []
-  for (const item of items) {
-    if (seen.has(item.id)) continue
-    seen.add(item.id)
-    out.push(item)
-  }
-  return out
-}
-
 export async function getHomeData(db: DB): Promise<HomeData> {
   const [onThisDayPool, recentPool, planned, years, artifact] = await Promise.all([
     getOnThisDay(db), // already excludes approximate dates
@@ -86,21 +121,79 @@ export async function getHomeData(db: DB): Promise<HomeData> {
     recentFlyer(db),
   ])
 
-  const used = new Set<string>()
+  // The events any pool media belongs to, so the hero can feature the event
+  // (title + link) rather than the stray frame that represents it.
+  const eventIds = [
+    ...new Set([...recentPool, ...onThisDayPool].map((m) => m.event_id).filter(Boolean)),
+  ] as string[]
+  const { data: eventRows } = eventIds.length
+    ? await db
+        .from('events')
+        .select('id, name, event_date, status, merged_into')
+        .in('id', eventIds)
+    : { data: [] }
+  const eventById = new Map(
+    ((eventRows ?? []) as {
+      id: string
+      name: string
+      event_date: string | null
+      status: string
+      merged_into: string | null
+    }[])
+      .filter((e) => !e.merged_into)
+      .map((e) => [e.id, e]),
+  )
 
-  // 1. Featured — a weighted candidate pool: on-this-day first, then favourites,
-  //    then any high-precision memory, then anything. The server picks a stable
-  //    first frame (dailyIndex) for SSR; the client rotates through the rest,
-  //    dissolving on load and while idle, never repeating the previous pick.
-  const pool = uniqueById([
+  // 1. Featured — a weighted candidate pool (on-this-day, favourites, then any
+  //    high-precision memory, then anything), biased toward 16:9 so the hero
+  //    mostly frames landscape and portraits are the exception the client
+  //    handles with a blurred backdrop. Each becomes a subject/cover pair.
+  const curated = uniqueById([
     ...onThisDayPool,
     ...recentPool.filter((media) => media.favorite && highPrecision(media)),
     ...recentPool.filter(highPrecision),
     ...recentPool,
-  ]).filter((media) => thumbOf(media)) // a hero must have something to show
-  const featured = pool.length ? (pool[dailyIndex(Math.min(pool.length, 12))] ?? pool[0]) : null
-  const featuredPool = pool.slice(0, FEATURED_POOL_SIZE)
-  if (featured) used.add(featured.id)
+  ]).filter((media) => heroImage(media))
+
+  const ordered = curated
+    .map((media, index) => ({ media, score: curated.length - index + landscapeScore(media) * 6 }))
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.media)
+
+  const toFeatured = (media: MediaView): FeaturedItem => {
+    const event = media.event_id ? eventById.get(media.event_id) : undefined
+    if (event) {
+      return {
+        subjectType: 'event',
+        subjectId: event.id,
+        title: event.name,
+        dateLabel: fullDate(event.event_date ?? media.taken_at),
+        href: `/community/${event.id}`,
+        image: heroImage(media),
+        width: media.width,
+        height: media.height,
+        focalX: media.focal_x,
+        focalY: media.focal_y,
+      }
+    }
+    return {
+      subjectType: 'media',
+      subjectId: media.id,
+      title: media.caption || media.event_name || season(media.taken_at),
+      dateLabel: formatCapturedAt(media.taken_at, media.taken_precision),
+      href: `/m/${media.id}`,
+      image: heroImage(media),
+      width: media.width,
+      height: media.height,
+      focalX: media.focal_x,
+      focalY: media.focal_y,
+    }
+  }
+
+  const featuredPool = ordered.slice(0, FEATURED_POOL_SIZE).map(toFeatured)
+  const featured = featuredPool.length
+    ? (featuredPool[dailyIndex(Math.min(featuredPool.length, 12))] ?? featuredPool[0])
+    : null
 
   // Collections covers, from the same recent pull — mosaic of photos, newest
   // video's poster, newest flyer. Never grey: an empty list falls to type.
@@ -114,15 +207,46 @@ export async function getHomeData(db: DB): Promise<HomeData> {
     artifact,
   }
 
-  // 2. On this day — a real month+day match, de-duped against Featured.
-  const onThisDay = onThisDayPool.filter((media) => !used.has(media.id)).slice(0, 12)
+  // 2. On this day — a real month+day match. De-duped only against itself; the
+  //    hero rotates, so pinning it against a moving target isn't meaningful.
+  const onThisDay = uniqueById(onThisDayPool).slice(0, 12)
   const onThisDayFinal = onThisDay.length >= 2 ? onThisDay : []
-  onThisDayFinal.forEach((media) => used.add(media.id))
+  const seen = new Set(onThisDayFinal.map((media) => media.id))
 
-  // 5. Recently added — individual media by created_at, never albums, de-duped.
-  const recentlyAdded = recentPool.filter((media) => !used.has(media.id)).slice(0, 12)
-  const recentlyAddedFinal = recentlyAdded.length >= 2 ? recentlyAdded : []
-  recentlyAddedFinal.forEach((media) => used.add(media.id))
+  // 3. Recently added — grouped by event so a big drop is one card, ordered by
+  //    the most recent upload in each group (activity, not event date).
+  const grouped = new Map<string, MediaView[]>()
+  const loose: MediaView[] = []
+  for (const media of recentPool) {
+    if (media.event_id) {
+      const list = grouped.get(media.event_id) ?? []
+      list.push(media)
+      grouped.set(media.event_id, list)
+    } else if (!seen.has(media.id)) {
+      loose.push(media)
+    }
+  }
+  const entries: { entry: RecentEntry; at: number }[] = []
+  for (const [id, items] of grouped) {
+    const newest = items[0] // recentPool is newest-first
+    entries.push({
+      entry: {
+        kind: 'event',
+        id,
+        name: newest.event_name ?? 'Event',
+        addedCount: items.length,
+        cover: thumbOf(newest),
+        focalX: newest.focal_x,
+        focalY: newest.focal_y,
+      },
+      at: new Date(newest.created_at).getTime(),
+    })
+  }
+  for (const media of loose) {
+    entries.push({ entry: { kind: 'media', media }, at: new Date(media.created_at).getTime() })
+  }
+  entries.sort((a, b) => b.at - a.at)
+  const recentlyAdded = entries.length >= 2 ? entries.slice(0, 12).map((e) => e.entry) : []
 
   // 4. Jump back in — the two or three densest years.
   const jumpBack = [...years]
@@ -137,7 +261,7 @@ export async function getHomeData(db: DB): Promise<HomeData> {
     onThisDay: onThisDayFinal,
     comingUp: planned,
     jumpBack: jumpBackFinal,
-    recentlyAdded: recentlyAddedFinal,
+    recentlyAdded,
     hasMedia: recentPool.length > 0,
     collections,
   }

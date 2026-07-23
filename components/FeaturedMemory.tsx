@@ -2,21 +2,26 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { formatCapturedAt, season } from '@/lib/format'
-import type { MediaView } from '@/lib/types'
+import type { FeaturedItem } from '@/lib/home'
 
 /**
  * The Featured Memory — the cheapest "alive" in the app.
  *
- * A weighted candidate pool comes from the server; the client picks a fresh one
- * on every load (never the previous load's pick), cross-dissolves it in, and —
- * if you sit on Home — keeps dissolving to the next every few seconds. It pauses
- * when you're interacting or the tab is hidden, respects `prefers-reduced-motion`
- * (which becomes a still frame, no cycling), preloads the next candidate so a
- * dissolve never reveals a blank, and Shuffle forces the next pick at once.
+ * The server hands a weighted candidate pool where each item models its
+ * *subject* (what the label says and the button opens) apart from its *cover*
+ * (the image). So a hero titled "Father's Day 2023" opens the event, and a lone
+ * photo opens the photo — the label and the click always agree.
  *
- * The base layer always shows a fully-loaded frame; the incoming one fades in on
- * top of it, so even a slow image never flashes empty.
+ * The client picks a fresh one on every load (never the previous pick),
+ * cross-dissolves it in, and — if you sit on Home — dissolves to the next every
+ * few seconds. It pauses on interaction or a hidden tab, preloads the next so a
+ * dissolve never flashes empty, goes still under `prefers-reduced-motion`, and
+ * Shuffle forces the next pick.
+ *
+ * Framing is fixed inside a constant 16:9-ish box: landscape covers crop to
+ * their focal point; a portrait source (9:16 phone video, a tall still) is shown
+ * whole, letterboxed against a blurred, darkened copy of itself — nothing
+ * cropped, the same at 390px and 1440px.
  */
 
 const IDLE_MS = 8000
@@ -24,10 +29,10 @@ const DISSOLVE_MS = 620
 const RECENT_KEY = 'featured:recent'
 const LAST_KEY = 'featured:last'
 const RECENT_MAX = 5
+/** Below this width/height ratio a source is "meaningfully taller" than the box. */
+const PORTRAIT_MAX = 1.2
 
-function heroImage(media: MediaView): string | null {
-  return media.display_url ?? media.thumb_url
-}
+const keyOf = (item: FeaturedItem) => `${item.subjectType}:${item.subjectId}`
 
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -49,15 +54,13 @@ function writeList(key: string, value: string[]) {
   }
 }
 
-/** A weighted pick from the pool: earlier entries (on-this-day, favourites,
- *  high-precision) weigh more. Excludes the given ids where it can, and prefers
- *  candidates not shown recently — but never returns nothing when the pool has
- *  options. */
-function weightedPick(pool: MediaView[], exclude: Set<string>, recent: string[]): MediaView {
-  const fresh = pool.filter((m) => !exclude.has(m.id) && !recent.includes(m.id))
-  const eligible = fresh.length ? fresh : pool.filter((m) => !exclude.has(m.id))
+/** A weighted pick: earlier entries (on-this-day, favourites, high-precision,
+ *  landscape) weigh more. Excludes the given keys where it can, prefers ones not
+ *  shown recently, and never returns nothing when the pool has options. */
+function weightedPick(pool: FeaturedItem[], exclude: Set<string>, recent: string[]): FeaturedItem {
+  const fresh = pool.filter((item) => !exclude.has(keyOf(item)) && !recent.includes(keyOf(item)))
+  const eligible = fresh.length ? fresh : pool.filter((item) => !exclude.has(keyOf(item)))
   const from = eligible.length ? eligible : pool
-  // Triangular weighting toward the front, without reading the clock.
   const weights = from.map((_, index) => from.length - index)
   const total = weights.reduce((sum, w) => sum + w, 0)
   let roll = Math.random() * total
@@ -68,31 +71,31 @@ function weightedPick(pool: MediaView[], exclude: Set<string>, recent: string[])
   return from[from.length - 1]
 }
 
-export function FeaturedMemory({ pool, initial }: { pool: MediaView[]; initial: MediaView }) {
-  const [shown, setShown] = useState<MediaView>(initial)
-  const [incoming, setIncoming] = useState<MediaView | null>(null)
+export function FeaturedMemory({ pool, initial }: { pool: FeaturedItem[]; initial: FeaturedItem }) {
+  const [shown, setShown] = useState<FeaturedItem>(initial)
+  const [incoming, setIncoming] = useState<FeaturedItem | null>(null)
 
-  const shownRef = useRef<MediaView>(initial)
+  const shownRef = useRef<FeaturedItem>(initial)
   const busyRef = useRef(false)
   const pausedRef = useRef(false)
   const recentRef = useRef<string[]>([])
-  const nextRef = useRef<MediaView | null>(null)
+  const nextRef = useRef<FeaturedItem | null>(null)
 
-  const remember = useCallback((id: string) => {
-    const recent = [id, ...recentRef.current.filter((entry) => entry !== id)].slice(0, RECENT_MAX)
+  const remember = useCallback((key: string) => {
+    const recent = [key, ...recentRef.current.filter((entry) => entry !== key)].slice(0, RECENT_MAX)
     recentRef.current = recent
     writeList(RECENT_KEY, recent)
-    writeList(LAST_KEY, [id])
+    writeList(LAST_KEY, [key])
   }, [])
 
-  const advanceTo = useCallback((next: MediaView | null) => {
-    if (!next || busyRef.current || next.id === shownRef.current.id) return
+  const advanceTo = useCallback((next: FeaturedItem | null) => {
+    if (!next || busyRef.current || keyOf(next) === keyOf(shownRef.current)) return
     busyRef.current = true
     setIncoming(next)
   }, [])
 
   const shuffle = useCallback(() => {
-    const exclude = new Set([shownRef.current.id])
+    const exclude = new Set([keyOf(shownRef.current)])
     advanceTo(nextRef.current ?? weightedPick(pool, exclude, recentRef.current))
   }, [advanceTo, pool])
 
@@ -103,7 +106,7 @@ export function FeaturedMemory({ pool, initial }: { pool: MediaView[]; initial: 
     const hold = prefersReducedMotion() ? 0 : DISSOLVE_MS
     const timer = window.setTimeout(() => {
       shownRef.current = incoming
-      remember(incoming.id)
+      remember(keyOf(incoming))
       setShown(incoming)
       setIncoming(null)
       busyRef.current = false
@@ -116,14 +119,14 @@ export function FeaturedMemory({ pool, initial }: { pool: MediaView[]; initial: 
     if (pool.length < 2) return
     recentRef.current = readList(RECENT_KEY)
     const last = readList(LAST_KEY)
-    const first = weightedPick(pool, new Set([initial.id, ...last]), recentRef.current)
+    const first = weightedPick(pool, new Set([keyOf(initial), ...last]), recentRef.current)
     const kickoff = window.setTimeout(() => advanceTo(first), 90)
 
     if (prefersReducedMotion()) return () => window.clearTimeout(kickoff)
 
     const interval = window.setInterval(() => {
       if (pausedRef.current || busyRef.current || document.hidden) return
-      advanceTo(nextRef.current ?? weightedPick(pool, new Set([shownRef.current.id]), recentRef.current))
+      advanceTo(nextRef.current ?? weightedPick(pool, new Set([keyOf(shownRef.current)]), recentRef.current))
     }, IDLE_MS)
 
     return () => {
@@ -135,23 +138,19 @@ export function FeaturedMemory({ pool, initial }: { pool: MediaView[]; initial: 
   // Preload the frame we'll most likely show next.
   useEffect(() => {
     if (pool.length < 2) return
-    const next = weightedPick(pool, new Set([shown.id]), recentRef.current)
+    const next = weightedPick(pool, new Set([keyOf(shown)]), recentRef.current)
     nextRef.current = next
-    const url = heroImage(next)
-    if (url) {
+    if (next.image) {
       const image = new Image()
-      image.src = url
+      image.src = next.image
     }
   }, [shown, pool])
 
   const active = incoming ?? shown
-  const base = heroImage(shown)
-  const top = incoming ? heroImage(incoming) : null
-  const title = active.caption || active.event_name || season(active.taken_at)
 
   return (
     <section
-      className="full-bleed relative overflow-hidden bg-ink-raised"
+      className="full-bleed relative overflow-hidden bg-ink"
       onPointerEnter={() => {
         pausedRef.current = true
       }}
@@ -160,48 +159,75 @@ export function FeaturedMemory({ pool, initial }: { pool: MediaView[]; initial: 
       }}
     >
       <div className="relative h-[68svh] max-h-[42rem] min-h-[26rem]">
-        {base && (
-          <img src={base} alt="" fetchPriority="high" className="absolute inset-0 h-full w-full object-cover" />
-        )}
-        {top && (
-          <img
-            key={active.id}
-            src={top}
-            alt=""
-            className="animate-fade absolute inset-0 h-full w-full object-cover"
-          />
+        <Frame item={shown} priority />
+        {incoming && (
+          <div key={keyOf(incoming)} className="animate-fade absolute inset-0">
+            <Frame item={incoming} />
+          </div>
         )}
 
-        <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-ink/70 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-ink via-ink/45 to-transparent" />
+        {/* Scrims tuned to hold white text over a bright daylight shot and a dark
+            night one alike: a heavy bottom rise plus a light top wash. */}
+        <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/55 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/95 via-black/55 to-transparent" />
 
         <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-5xl px-5 pb-8 sm:px-6 sm:pb-12">
-          <div key={active.id} className="animate-fade">
-            <p className="eyebrow text-white/60">Featured memory</p>
-            <h1 className="mt-2 max-w-2xl text-[clamp(1.85rem,5.5vw,3.25rem)] leading-[1.05] font-semibold tracking-[-0.025em] text-white text-balance">
-              {title}
+          <div key={keyOf(active)} className="animate-fade">
+            <p className="eyebrow text-white/70">Featured memory</p>
+            <h1 className="mt-2 max-w-2xl text-[clamp(1.85rem,5.5vw,3.25rem)] leading-[1.05] font-semibold tracking-[-0.025em] text-white text-balance [text-shadow:0_2px_18px_rgba(0,0,0,0.5)]">
+              {active.title}
             </h1>
-            <p className="meta-mono mt-2.5 flex flex-wrap items-center gap-x-2 text-white/60">
-              {formatCapturedAt(active.taken_at, active.taken_precision)}
-              {active.event_name && active.event_name !== title && (
-                <>
-                  <span className="text-white/30">·</span>
-                  {active.event_name}
-                </>
-              )}
-            </p>
+            <p className="meta-mono mt-2.5 text-white/70">{active.dateLabel}</p>
           </div>
           <div className="mt-5 flex items-center gap-3">
-            <Link href={`/m/${active.id}`} className="btn btn-primary">
+            <Link href={active.href} className="btn btn-primary">
               <PlayGlyph /> Open
             </Link>
-            <button type="button" onClick={shuffle} className="btn btn-ghost backdrop-blur-sm">
+            <button type="button" onClick={shuffle} className="btn btn-ghost text-white backdrop-blur-sm">
               <ShuffleGlyph /> Shuffle
             </button>
           </div>
         </div>
       </div>
     </section>
+  )
+}
+
+/** One hero frame. Landscape crops to its focal point; a portrait source shows
+ *  whole against a blurred copy of itself, so nothing is ever cut off. */
+function Frame({ item, priority = false }: { item: FeaturedItem; priority?: boolean }) {
+  if (!item.image) return <span className="absolute inset-0 bg-ink-raised" />
+
+  const portrait =
+    item.width && item.height ? item.width / item.height < PORTRAIT_MAX : false
+
+  if (portrait) {
+    return (
+      <>
+        <img
+          src={item.image}
+          alt=""
+          aria-hidden="true"
+          fetchPriority={priority ? 'high' : undefined}
+          className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl brightness-50"
+        />
+        <img
+          src={item.image}
+          alt=""
+          className="absolute inset-0 h-full w-full object-contain"
+        />
+      </>
+    )
+  }
+
+  return (
+    <img
+      src={item.image}
+      alt=""
+      fetchPriority={priority ? 'high' : undefined}
+      className="absolute inset-0 h-full w-full object-cover"
+      style={{ objectPosition: `${item.focalX * 100}% ${item.focalY * 100}%` }}
+    />
   )
 }
 

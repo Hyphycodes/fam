@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Avatar } from '@/components/Avatar'
 import { PeopleStack } from '@/components/PeopleStack'
-import { duration, formatCapturedAt } from '@/lib/format'
+import { duration, focalPosition, formatCapturedAt } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
 /**
@@ -56,7 +56,13 @@ export function MediaTile({ media }: { media: MediaView }) {
         }
       >
         {source ? (
-          <img src={source} alt="" loading="lazy" decoding="async" />
+          <img
+            src={source}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            style={{ objectPosition: focalPosition(media) }}
+          />
         ) : (
           <div className="h-full w-full animate-sweep" />
         )}

@@ -3,6 +3,7 @@
 import type { CropMetadata } from '@/lib/types'
 import type { CapturePrecision, CaptureSource } from '@/lib/format'
 import { cropGeometry, drawCrop } from '@/lib/client/crop-geometry'
+import { detectFocal, CENTER_FOCAL, type Focal } from '@/lib/client/face'
 
 /**
  * Getting a phone's file ready to upload.
@@ -121,6 +122,8 @@ export interface PreparedPhoto {
   takenSource: CaptureSource
   /** EXIF gives an exact instant; the fallback is only trustworthy to the day. */
   takenPrecision: CapturePrecision
+  /** Where the subject sits, from face detection — steers cover crops. */
+  focal: Focal
   previewUrl: string
 }
 
@@ -134,6 +137,10 @@ export async function preparePhoto(file: File, crop?: CropMetadata | null): Prom
     // as a fallback so it surfaces in the review backlog rather than masquerading
     // as a known date.
     const exif = await exifTakenAt(file)
+    // Face-driven focal point, best-effort: the subject in a family photo is a
+    // face, and center-crop misses it. A cropped source uses center — the person
+    // already framed it.
+    const focal = crop ? CENTER_FOCAL : await detectFocal(bitmap)
     return {
       display: display.blob,
       thumb: thumb.blob,
@@ -142,6 +149,7 @@ export async function preparePhoto(file: File, crop?: CropMetadata | null): Prom
       takenAt: exif ?? new Date(file.lastModified),
       takenSource: exif ? 'exif' : 'upload_fallback',
       takenPrecision: exif ? 'exact' : 'day',
+      focal,
       previewUrl: URL.createObjectURL(thumb.blob),
     }
   } finally {

@@ -208,6 +208,20 @@ export function isEmojiOnly(value: string): boolean {
   return trimmed.length > 0 && EMOJI_ONLY.test(trimmed)
 }
 
+/**
+ * A CSS `object-position` from a media focal point (0..1), for any box that
+ * crops a cover. Defaults to dead-center, so a row without a real focal point
+ * behaves exactly as center-crop did.
+ */
+export function focalPosition(focal: {
+  focal_x?: number | null
+  focal_y?: number | null
+}): string {
+  const clamp = (value: number | null | undefined) =>
+    typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.5
+  return `${clamp(focal.focal_x) * 100}% ${clamp(focal.focal_y) * 100}%`
+}
+
 /** "Mom, Dad and 2 others" */
 export function nameList(names: string[], max = 2): string {
   if (names.length === 0) return ''

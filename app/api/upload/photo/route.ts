@@ -14,6 +14,9 @@ interface Body {
   takenAt?: string
   takenSource?: string
   takenPrecision?: string
+  focalX?: number
+  focalY?: number
+  focalSource?: string
   displayType?: string
   thumbType?: string
   eventId?: string | null
@@ -63,6 +66,9 @@ export async function POST(request: Request) {
     // anything else the copy-date fallback. Never trust the label past the enum.
     const takenSource = isCaptureSource(body.takenSource) ? body.takenSource : 'upload_fallback'
     const takenPrecision = isCapturePrecision(body.takenPrecision) ? body.takenPrecision : 'day'
+    // Face-detected focal point from ingest. Ingest never claims a 'user'
+    // placement — that's reserved for a deliberate correction and is sacred.
+    const focal = sanitizeFocal(body.focalX, body.focalY, body.focalSource)
     const originalType = body.contentType || 'application/octet-stream'
     const displayType = body.displayType || 'image/jpeg'
     const thumbType = body.thumbType || 'image/jpeg'
@@ -101,6 +107,9 @@ export async function POST(request: Request) {
             error_reason: null,
             width: toInt(body.width),
             height: toInt(body.height),
+            focal_x: focal.x,
+            focal_y: focal.y,
+            focal_source: focal.source,
             crop_metadata: cropMetadata,
           })
           .eq('id', existing.id)
@@ -153,6 +162,9 @@ export async function POST(request: Request) {
       taken_at: takenAt.toISOString(),
       taken_source: takenSource,
       taken_precision: takenPrecision,
+      focal_x: focal.x,
+      focal_y: focal.y,
+      focal_source: focal.source,
       event_id: uploader.eventId,
       r2_key: keys.original,
       r2_display_key: keys.display,
@@ -208,6 +220,23 @@ export async function POST(request: Request) {
 function toInt(value: unknown): number | null {
   const n = Number(value)
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null
+}
+
+/** A focal point is only trusted inside [0,1]; ingest may report 'face' or
+ *  'default' but never 'user' (that's a person's deliberate placement). */
+function sanitizeFocal(
+  x: unknown,
+  y: unknown,
+  source: unknown,
+): { x: number; y: number; source: 'default' | 'face' } {
+  const coord = (value: unknown) => {
+    const n = Number(value)
+    return Number.isFinite(n) && n >= 0 && n <= 1 ? n : null
+  }
+  const fx = coord(x)
+  const fy = coord(y)
+  const faced = source === 'face' && fx !== null && fy !== null
+  return faced ? { x: fx as number, y: fy as number, source: 'face' } : { x: 0.5, y: 0.5, source: 'default' }
 }
 
 function parseDate(value: string | undefined): Date | null {

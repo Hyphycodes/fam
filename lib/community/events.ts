@@ -57,15 +57,15 @@ async function resolveEvents(db: DB, events: EventRow[]): Promise<BoardEvent[]> 
 
   const ids = events.map((e) => e.id)
 
-  const [{ data: mediaRows }, { data: commentRows }, hosts] = await Promise.all([
+  const [{ data: mediaRows }, { data: commentRows }, people] = await Promise.all([
     db
       .from('media')
-      .select('event_id, stream_uid, poster_url, r2_thumb_key, r2_display_key, created_at')
+      .select('event_id, stream_uid, poster_url, r2_thumb_key, r2_display_key, focal_x, focal_y, created_at')
       .in('event_id', ids)
       .eq('status', 'ready')
       .order('created_at', { ascending: false }),
     db.from('comments').select('collection_id').in('collection_id', ids),
-    loadHosts(db, events),
+    loadPeople(db, events),
   ])
 
   const mediaByEvent = new Map<string, Record<string, unknown>[]>()
@@ -87,6 +87,8 @@ async function resolveEvents(db: DB, events: EventRow[]): Promise<BoardEvent[]> 
     events.map(async (event): Promise<BoardEvent> => {
       const media = mediaByEvent.get(event.id) ?? []
       let cover: string | null = null
+      let focalX = 0.5
+      let focalY = 0.5
       const first = media[0]
       if (first) {
         if (first.stream_uid && streamReady) {
@@ -95,8 +97,13 @@ async function resolveEvents(db: DB, events: EventRow[]): Promise<BoardEvent[]> 
           const key = (first.r2_thumb_key as string | null) ?? (first.r2_display_key as string | null)
           cover = key ? await presignGet(key) : null
         }
+        if (cover) {
+          focalX = typeof first.focal_x === 'number' ? (first.focal_x as number) : 0.5
+          focalY = typeof first.focal_y === 'number' ? (first.focal_y as number) : 0.5
+        }
       }
-      const host = hostFor(event, hosts)
+      const host = hostFor(event, people)
+      const editor = editorFor(event, people)
       return {
         id: event.id,
         name: event.name,
@@ -104,6 +111,9 @@ async function resolveEvents(db: DB, events: EventRow[]): Promise<BoardEvent[]> 
         description: event.description,
         flyer_url: flyerUrl(event.flyer_path),
         cover_url: cover,
+        cover_media_id: event.cover_media_id,
+        cover_focal_x: focalX,
+        cover_focal_y: focalY,
         host_name: host?.display_name ?? null,
         host_avatar_url: host?.avatar_url ?? null,
         media_count: media.length,
@@ -113,6 +123,8 @@ async function resolveEvents(db: DB, events: EventRow[]): Promise<BoardEvent[]> 
         starts_at: event.starts_at,
         location: event.location,
         merged_into: event.merged_into,
+        editor_name: editor?.display_name ?? null,
+        last_edited_at: event.last_edited_at,
       }
     }),
   )
@@ -123,13 +135,14 @@ export async function getCollectionById(db: DB, id: string): Promise<BoardEvent 
   if (!data) return null
   const event = data as EventRow
 
-  const [{ count: mediaCount }, { count: commentCount }, hosts] = await Promise.all([
+  const [{ count: mediaCount }, { count: commentCount }, people] = await Promise.all([
     db.from('media').select('id', { count: 'exact', head: true }).eq('event_id', id).eq('status', 'ready'),
     db.from('comments').select('id', { count: 'exact', head: true }).eq('collection_id', id),
-    loadHosts(db, [event]),
+    loadPeople(db, [event]),
   ])
 
-  const host = hostFor(event, hosts)
+  const host = hostFor(event, people)
+  const editor = editorFor(event, people)
   return {
     id: event.id,
     name: event.name,
@@ -137,6 +150,9 @@ export async function getCollectionById(db: DB, id: string): Promise<BoardEvent 
     description: event.description,
     flyer_url: flyerUrl(event.flyer_path),
     cover_url: null,
+    cover_media_id: event.cover_media_id,
+    cover_focal_x: 0.5,
+    cover_focal_y: 0.5,
     host_name: host?.display_name ?? null,
     host_avatar_url: host?.avatar_url ?? null,
     media_count: mediaCount ?? 0,
@@ -146,24 +162,40 @@ export async function getCollectionById(db: DB, id: string): Promise<BoardEvent 
     starts_at: event.starts_at,
     location: event.location,
     merged_into: event.merged_into,
+    editor_name: editor?.display_name ?? null,
+    last_edited_at: event.last_edited_at,
   }
 }
 
-type Host = { display_name: string; avatar_url: string | null }
-type HostMaps = { byMember: Map<string, Host>; byLegacy: Map<string, Host> }
+type Person = { display_name: string; avatar_url: string | null }
+type PersonMaps = { byMember: Map<string, Person>; byLegacy: Map<string, Person> }
 
 /** Events can be hosted by a passcode member or a legacy email account —
  *  whichever created them. Try the member id first, then the legacy id. */
-function hostFor(event: EventRow, hosts: HostMaps): Host | undefined {
+function hostFor(event: EventRow, people: PersonMaps): Person | undefined {
   return (
-    (event.created_by_member ? hosts.byMember.get(event.created_by_member) : undefined) ??
-    (event.created_by ? hosts.byLegacy.get(event.created_by) : undefined)
+    (event.created_by_member ? people.byMember.get(event.created_by_member) : undefined) ??
+    (event.created_by ? people.byLegacy.get(event.created_by) : undefined)
   )
 }
 
-async function loadHosts(db: DB, events: EventRow[]): Promise<HostMaps> {
-  const memberIds = [...new Set(events.map((e) => e.created_by_member).filter(Boolean))] as string[]
-  const legacyIds = [...new Set(events.map((e) => e.created_by).filter(Boolean))] as string[]
+/** Whoever last edited a field, resolved the same way as the host. */
+function editorFor(event: EventRow, people: PersonMaps): Person | undefined {
+  return (
+    (event.last_edited_by_member ? people.byMember.get(event.last_edited_by_member) : undefined) ??
+    (event.last_edited_by ? people.byLegacy.get(event.last_edited_by) : undefined)
+  )
+}
+
+/** One pass that resolves every name an event needs — its host and its last
+ *  editor — across both identity systems. */
+async function loadPeople(db: DB, events: EventRow[]): Promise<PersonMaps> {
+  const memberIds = [
+    ...new Set(events.flatMap((e) => [e.created_by_member, e.last_edited_by_member]).filter(Boolean)),
+  ] as string[]
+  const legacyIds = [
+    ...new Set(events.flatMap((e) => [e.created_by, e.last_edited_by]).filter(Boolean)),
+  ] as string[]
 
   const [{ data: members }, { data: profiles }] = await Promise.all([
     memberIds.length

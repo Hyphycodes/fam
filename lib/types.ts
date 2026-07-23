@@ -4,6 +4,8 @@ export type Role = 'owner' | 'family'
 export type MemberRole = 'owner' | 'member'
 export type MediaType = 'photo' | 'video'
 export type MediaStatus = 'processing' | 'ready' | 'error'
+/** How a media focal point was set: center (unknown), face detection, or a person. */
+export type FocalSource = 'default' | 'face' | 'user'
 export type CollectionKind = 'album' | 'event'
 /** The full arc; only planned + completed ship now (upcoming/live are prompt 09). */
 export type EventStatus = 'planned' | 'upcoming' | 'live' | 'completed'
@@ -69,6 +71,10 @@ export interface EventRow {
   location: string | null
   /** Set when this event was merged into another (soft delete); reads hide it. */
   merged_into: string | null
+  // Edit provenance (prompt 10d). Null until a field is edited after creation.
+  last_edited_at: string | null
+  last_edited_by: string | null
+  last_edited_by_member: string | null
 }
 
 /** A board event with everything the feed needs resolved. */
@@ -79,6 +85,11 @@ export interface BoardEvent {
   description: string | null
   flyer_url: string | null
   cover_url: string | null
+  /** The explicitly-chosen cover frame, if any (for the editor's picker). */
+  cover_media_id: string | null
+  /** Focal point of the cover, when it came from a media frame (else centered). */
+  cover_focal_x: number
+  cover_focal_y: number
   host_name: string | null
   host_avatar_url: string | null
   media_count: number
@@ -88,6 +99,9 @@ export interface BoardEvent {
   starts_at: string | null
   location: string | null
   merged_into: string | null
+  /** Who last edited a field, resolved for display, and when (null = untouched). */
+  editor_name: string | null
+  last_edited_at: string | null
 }
 
 /** The domain name for the events table. An event is a collection with kind='event'. */
@@ -178,6 +192,11 @@ export interface MediaRow {
   taken_precision: CapturePrecision
   /** Provenance of `taken_at`. 'upload_fallback' is the review backlog. */
   taken_source: CaptureSource
+  /** Focal point 0..1 for object-position when a cover crops this image. */
+  focal_x: number
+  focal_y: number
+  /** How the focal point was set. A 'user' placement is never overwritten. */
+  focal_source: FocalSource
   event_id: string | null
   upload_link_id: string | null
   status: MediaStatus
