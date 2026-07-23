@@ -5,6 +5,8 @@ export type MemberRole = 'owner' | 'member'
 export type MediaType = 'photo' | 'video'
 export type MediaStatus = 'processing' | 'ready' | 'error'
 export type CollectionKind = 'album' | 'event'
+/** The full arc; only planned + completed ship now (upcoming/live are prompt 09). */
+export type EventStatus = 'planned' | 'upcoming' | 'live' | 'completed'
 
 /**
  * A community member. The passcode-era identity, decoupled from auth.users.
@@ -59,6 +61,12 @@ export interface EventRow {
   description: string | null
   created_by_member: string | null
   flyer_path: string | null
+  // Lifecycle (prompt 04). event_date stays the when-it-happened date; starts_at
+  // / ends_at are a plan's intended window (may be null).
+  status: EventStatus
+  starts_at: string | null
+  ends_at: string | null
+  location: string | null
 }
 
 /** A board event with everything the feed needs resolved. */
@@ -74,6 +82,9 @@ export interface BoardEvent {
   media_count: number
   comment_count: number
   created_at: string
+  status: EventStatus
+  starts_at: string | null
+  location: string | null
 }
 
 /** The domain name for the events table. An event is a collection with kind='event'. */

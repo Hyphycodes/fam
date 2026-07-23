@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { duration, formatCapturedAt } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
-import type { MonthCount, TimelineCursor } from '@/lib/timeline'
+import type { MonthCount, TimelineCursor, TimelineEvent } from '@/lib/timeline'
 
 /**
  * The Timeline — one continuous scroll through the whole archive, ordered by
@@ -80,15 +80,57 @@ function group(media: MediaView[]): YearGroup[] {
   return [...years.values()].sort((a, b) => b.year - a.year)
 }
 
+/**
+ * Weave completed events into the media grouping so a just-completed event (with
+ * no photos yet) still appears at its date. An event already surfaced by its own
+ * media is left alone (no double card). Events older than the oldest loaded row
+ * wait until scrolling reaches them, so the walk stays in order — unless we've
+ * loaded everything, in which case they all belong.
+ */
+function groupWithEvents(media: MediaView[], events: TimelineEvent[], done: boolean): YearGroup[] {
+  const years = group(media)
+  if (events.length === 0) return years
+
+  const oldest = media.length ? new Date(media[media.length - 1].taken_at).getTime() : null
+  const byYear = new Map(years.map((yg) => [yg.year, yg]))
+
+  for (const event of events) {
+    const at = new Date(event.date.length === 10 ? `${event.date}T12:00:00Z` : event.date)
+    if (Number.isNaN(at.getTime())) continue
+    if (!done && oldest !== null && at.getTime() < oldest) continue // not yet in view
+    const year = at.getUTCFullYear()
+    const month = at.getUTCMonth() + 1
+
+    let yg = byYear.get(year)
+    if (!yg) {
+      yg = { year, band: [], months: [] }
+      byYear.set(year, yg)
+    }
+    let mg = yg.months.find((m) => m.month === month)
+    if (!mg) {
+      mg = { year, month, band: [], grid: [], events: [] }
+      yg.months.push(mg)
+    }
+    if (mg.events.some((e) => e.id === event.id)) continue // already shown via its media
+    mg.events.push({ id: event.id, name: event.name, cover: event.cover_url, count: 0 })
+  }
+
+  const merged = [...byYear.values()].sort((a, b) => b.year - a.year)
+  for (const yg of merged) yg.months.sort((a, b) => b.month - a.month)
+  return merged
+}
+
 export function Timeline({
   initialMedia,
   initialCursor,
   monthCounts,
+  events,
   people,
 }: {
   initialMedia: MediaView[]
   initialCursor: TimelineCursor | null
   monthCounts: MonthCount[]
+  events: TimelineEvent[]
   people: { id: string; name: string }[]
 }) {
   const [media, setMedia] = useState(initialMedia)
@@ -100,7 +142,12 @@ export function Timeline({
   const [personId, setPersonId] = useState<string | null>(null)
 
   const filtered = type !== null || personId !== null
-  const groups = useMemo(() => group(media), [media])
+  // Events only belong in the unfiltered view — a person/type filter is about
+  // media, and injecting whole events would muddy it.
+  const groups = useMemo(
+    () => (filtered ? group(media) : groupWithEvents(media, events, done)),
+    [media, events, done, filtered],
+  )
 
   // Years that have content, grouped by decade — the rail. Volumes come from the
   // grouped count so this is right even before the matching rows have loaded.
@@ -447,7 +494,9 @@ function AlbumCard({ event }: { event: { id: string; name: string; cover: string
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium text-paper">{event.name}</span>
           <span className="meta-mono text-paper-faint">
-            {event.count} {event.count === 1 ? 'item' : 'items'} this month
+            {event.count > 0
+              ? `${event.count} ${event.count === 1 ? 'item' : 'items'} this month`
+              : 'Event · tap to open'}
           </span>
         </span>
         <span aria-hidden="true" className={`text-paper-faint transition-transform ${open ? 'rotate-180' : ''}`}>

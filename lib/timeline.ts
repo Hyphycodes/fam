@@ -34,6 +34,53 @@ export async function getTimelineMonthCounts(db: DB): Promise<MonthCount[]> {
   }))
 }
 
+export interface TimelineEvent {
+  id: string
+  name: string
+  /** When it happened — the date it sits at in the timeline. */
+  date: string
+  cover_url: string | null
+}
+
+/**
+ * Completed board events, so a just-completed event appears in the timeline at
+ * its date even before anyone has added a photo to it. Bounded (there are never
+ * many events), so covers are resolved directly. Planned events are excluded —
+ * the future belongs to the Board, not the Timeline.
+ */
+export async function getTimelineEvents(db: DB): Promise<TimelineEvent[]> {
+  const { data } = await db
+    .from('events')
+    .select('id, name, event_date, created_at, cover_media_id')
+    .eq('kind', 'event')
+    .eq('status', 'completed')
+
+  const events = (data ?? []) as {
+    id: string
+    name: string
+    event_date: string | null
+    created_at: string
+    cover_media_id: string | null
+  }[]
+  if (events.length === 0) return []
+
+  const coverIds = [...new Set(events.map((e) => e.cover_media_id).filter(Boolean))] as string[]
+  const coverUrl = new Map<string, string | null>()
+  if (coverIds.length) {
+    const { data: coverRows } = await db.from('media').select('*').in('id', coverIds).eq('status', 'ready')
+    for (const view of await hydrate(db, (coverRows ?? []) as MediaRow[])) {
+      coverUrl.set(view.id, view.thumb_url ?? view.display_url)
+    }
+  }
+
+  return events.map((event) => ({
+    id: event.id,
+    name: event.name,
+    date: event.event_date ?? event.created_at,
+    cover_url: event.cover_media_id ? (coverUrl.get(event.cover_media_id) ?? null) : null,
+  }))
+}
+
 export interface TimelinePage {
   media: MediaView[]
   nextCursor: TimelineCursor | null

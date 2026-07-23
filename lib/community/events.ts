@@ -8,18 +8,23 @@ import { isConfigured } from '@/lib/env'
 import type { BoardEvent, EventRow } from '@/lib/types'
 
 /**
- * The community board.
+ * The community board — now the *planning* surface.
  *
- * Every board event is a collection with kind='event'. Its picture is the flyer
- * if one was posted, otherwise the most recent frame in its album — so an event
- * always has a face even before anyone adds a flyer.
+ * It holds what hasn't happened yet: events that are still planned (and, later,
+ * upcoming/live). Completed events leave the board and live in the Timeline.
+ * A planned event's face is its flyer — the artwork you made for it — falling
+ * back to the newest frame in its album if one somehow exists.
+ *
+ * Ordered soonest-intended first (a plan with a date beats an open-ended one),
+ * then newest.
  */
 export async function getBoardEvents(db: DB): Promise<BoardEvent[]> {
   const { data } = await db
     .from('events')
     .select('*')
     .eq('kind', 'event')
-    .order('event_date', { ascending: false, nullsFirst: false })
+    .neq('status', 'completed')
+    .order('starts_at', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false })
 
   const events = (data ?? []) as EventRow[]
@@ -81,6 +86,9 @@ export async function getBoardEvents(db: DB): Promise<BoardEvent[]> {
         media_count: media.length,
         comment_count: commentCounts.get(event.id) ?? 0,
         created_at: event.created_at,
+        status: event.status,
+        starts_at: event.starts_at,
+        location: event.location,
       }
     }),
   )
@@ -110,6 +118,9 @@ export async function getCollectionById(db: DB, id: string): Promise<BoardEvent 
     media_count: mediaCount ?? 0,
     comment_count: commentCount ?? 0,
     created_at: event.created_at,
+    status: event.status,
+    starts_at: event.starts_at,
+    location: event.location,
   }
 }
 

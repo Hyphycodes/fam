@@ -1,20 +1,27 @@
 import { fail, handleError, ok, readJson } from '@/lib/api'
 import { getViewer } from '@/lib/viewer'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { isEventStatus } from '@/lib/community/eventState'
 
 interface Body {
   name?: string
   eventDate?: string | null
+  startsAt?: string | null
+  location?: string | null
   description?: string | null
   flyerPath?: string | null
+  status?: string
 }
 
 /**
- * Post an event to the board — or create one inline from a tag/event picker
- * elsewhere in the app. Creating it *is* creating its album, the same
- * collection everyone uploads photos into afterward. Either identity works: a
- * passcode member attributes to `created_by_member`, a legacy account to the
- * older `created_by`.
+ * Plan an event on the board. A board post is now a *plan* by default — a flyer
+ * and an idea people can react and talk under before it exists. Its intended
+ * date (starts_at) is optional; "sometime this summer" is a real state. It stays
+ * planned until someone marks it happened (see the [id] transition route), which
+ * is when it gets a real event_date and joins the Timeline.
+ *
+ * Either identity works: a passcode member attributes to `created_by_member`, a
+ * legacy account to the older `created_by`.
  */
 export async function POST(request: Request) {
   try {
@@ -23,10 +30,15 @@ export async function POST(request: Request) {
 
     const body = await readJson<Body>(request)
     const name = (body.name ?? '').trim().slice(0, 140)
-    if (!name) return fail('Give the event a name.')
+    if (!name) return fail('Give it a name.')
 
-    const eventDate = normalizeDate(body.eventDate)
+    const status = isEventStatus(body.status) ? body.status : 'planned'
+    const startsAt = normalizeTimestamp(body.startsAt)
+    const location = (body.location ?? '').trim().slice(0, 200) || null
     const description = (body.description ?? '').trim().slice(0, 4000) || null
+    // A plan hasn't happened, so it has no event_date yet — only an intent.
+    // A directly-completed event keeps its given date.
+    const eventDate = status === 'completed' ? normalizeDate(body.eventDate) : null
 
     const admin = createAdminClient()
     const { data, error } = await admin
@@ -34,9 +46,12 @@ export async function POST(request: Request) {
       .insert({
         name,
         event_date: eventDate,
+        starts_at: startsAt,
+        location,
         description,
         flyer_path: body.flyerPath ?? null,
         kind: 'event',
+        status,
         created_by_member: viewer.kind === 'member' ? viewer.memberId : null,
         created_by: viewer.kind === 'legacy' ? viewer.id : null,
       })
@@ -57,4 +72,13 @@ function normalizeDate(value: string | null | undefined): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null
   const date = new Date(`${trimmed}T00:00:00Z`)
   return Number.isNaN(date.getTime()) ? null : trimmed
+}
+
+/** A YYYY-MM-DD intended date becomes a noon-UTC timestamp; ISO passes through. */
+function normalizeTimestamp(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim()
+  if (!trimmed) return null
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? `${trimmed}T12:00:00Z` : trimmed
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }

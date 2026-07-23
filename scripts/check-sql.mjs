@@ -311,8 +311,39 @@ if (tags[0].n === 0) pass('Tags can actually be removed')
 else fail('media_people DELETE is a silent no-op — re-tagging will break')
 
 const { rows: versions } = await db.query(`select public.reel_schema_version() as version`)
-if (versions[0].version === 10) pass('Production readiness can identify schema version 10')
+if (versions[0].version === 11) pass('Production readiness can identify schema version 11')
 else fail(`Unexpected schema version: ${versions[0].version}`)
+
+// ---------------------------------------------------------------------------
+// Event lifecycle (0011)
+// ---------------------------------------------------------------------------
+console.log('\nEvent lifecycle')
+
+await db.exec(`insert into public.events (id, name) values
+  ('e0000000-0000-0000-0000-000000000001', 'Existing cookout')`)
+const { rows: eventDefault } = await db.query(
+  `select status from public.events where id = 'e0000000-0000-0000-0000-000000000001'`,
+)
+if (eventDefault[0].status === 'completed') pass('Existing events default to completed')
+else fail(`Event did not default to completed: ${JSON.stringify(eventDefault[0])}`)
+
+try {
+  await db.exec(`insert into public.events (name, status) values ('Bad', 'archived')`)
+  fail('events.status accepted a value outside the lifecycle')
+} catch {
+  pass('events.status rejects values outside planned/upcoming/live/completed')
+}
+
+await db.exec(`insert into public.events (id, name, status, starts_at) values
+  ('e0000000-0000-0000-0000-000000000002', 'Summer trip idea', 'planned', null)`)
+const { rows: planned } = await db.query(
+  `select status, starts_at from public.events where id = 'e0000000-0000-0000-0000-000000000002'`,
+)
+if (planned[0].status === 'planned' && planned[0].starts_at === null) {
+  pass('A planned event with a null intended date is valid')
+} else {
+  fail(`Planned event wrong: ${JSON.stringify(planned[0])}`)
+}
 
 // ---------------------------------------------------------------------------
 // Capture precision + source (0009)

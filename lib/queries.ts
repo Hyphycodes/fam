@@ -130,9 +130,12 @@ export async function getPending(db: DB, uploaderId: string): Promise<MediaRow[]
 }
 
 export async function getEvents(db: DB): Promise<(EventRow & { media_count: number })[]> {
+  // Planned events are not albums you file media into — they live on the Board
+  // until they happen. Everything else (completed events, albums) is fair game.
   const { data: events } = await db
     .from('events')
     .select('*')
+    .neq('status', 'planned')
     .order('event_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
 

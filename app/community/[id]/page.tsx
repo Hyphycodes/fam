@@ -6,6 +6,7 @@ import { Reactions } from '@/components/Reactions'
 import { Comments } from '@/components/Comments'
 import { Avatar } from '@/components/Avatar'
 import { AddMemoriesButton } from '@/components/AddMemories'
+import { EventLifecycle } from '@/components/EventLifecycle'
 import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
 import { readDb } from '@/lib/db'
@@ -15,12 +16,13 @@ import { fullDate } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 
-/** One event: its flyer and details, the talk under it, and its growing album. */
-export default async function EventPage({
-  params,
-}: {
-  params: Promise<{ id: string }>
-}) {
+/**
+ * One event across its whole life. While planned it's a flyer, an intent, and
+ * the talk under it — no album yet, because nothing has happened. Once completed
+ * it becomes the memory: the same flyer and comments, now with the album and
+ * everyone's photos. Completion never deletes the planning stage.
+ */
+export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
   if (!isConfigured('supabase')) redirect('/setup')
 
   const viewer = await requireViewer()
@@ -30,33 +32,47 @@ export default async function EventPage({
   const event = await getCollectionById(db, id)
   if (!event) notFound()
 
-  const media = await getFeed(db, { eventId: id, limit: 12 })
+  const planned = event.status !== 'completed'
+  const media = planned ? [] : await getFeed(db, { eventId: id, limit: 12 })
 
   return (
     <Shell viewer={viewer}>
       <div className="mt-6">
-        <Link href="/community" className="text-sm text-paper-faint transition-colors hover:text-paper">
-          ← The board
+        <Link
+          href={planned ? '/community' : '/timeline'}
+          className="text-sm text-paper-faint transition-colors hover:text-paper"
+        >
+          {planned ? '← The board' : '← Timeline'}
         </Link>
       </div>
 
       {event.flyer_url && (
         <div className="mt-5 overflow-hidden rounded-xl bg-ink-raised">
-          <img src={event.flyer_url} alt="" className="max-h-[60vh] w-full object-contain" />
+          <img src={event.flyer_url} alt="" className="max-h-[70vh] w-full object-contain" />
         </div>
       )}
 
       <header className="mt-7">
-        {event.event_date && (
-          <p className="meta-mono text-paper-dim">{fullDate(event.event_date)}</p>
-        )}
+        <p className="meta-mono text-paper-dim">
+          {planned ? (
+            <>
+              {event.starts_at ? `Planned for ${fullDate(event.starts_at)}` : 'Planned'}
+              {event.location ? ` · ${event.location}` : ''}
+            </>
+          ) : (
+            <>
+              {event.event_date ? fullDate(event.event_date) : 'Completed'}
+              {event.location ? ` · ${event.location}` : ''}
+            </>
+          )}
+        </p>
         <h1 className="mt-2 text-[clamp(2rem,6vw,3.25rem)] font-semibold leading-[1.02] tracking-[-0.03em] text-balance">
           {event.name}
         </h1>
         {event.host_name && (
           <p className="mt-3 flex items-center gap-2 text-sm text-paper-dim">
             <Avatar name={event.host_name} src={event.host_avatar_url} size={24} />
-            Posted by {event.host_name}
+            {planned ? 'Planned by' : 'Posted by'} {event.host_name}
           </p>
         )}
         {event.description && (
@@ -64,6 +80,10 @@ export default async function EventPage({
             {event.description}
           </p>
         )}
+
+        <div className="mt-6">
+          <EventLifecycle eventId={event.id} status={event.status} canRevert={viewer.role === 'owner'} />
+        </div>
       </header>
 
       <div className="mt-8 space-y-10 border-y border-edge py-8">
@@ -71,29 +91,36 @@ export default async function EventPage({
         <Comments collectionId={event.id} />
       </div>
 
-      <section className="mt-10">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold tracking-[-0.01em]">
-            The album
-            <span className="ml-2 text-sm font-normal text-paper-faint">
-              {event.media_count} {event.media_count === 1 ? 'photo' : 'photos'}
-            </span>
-          </h2>
-          <AddMemoriesButton variant="hero" context={{ eventId: event.id }} />
-        </div>
+      {planned ? (
+        <p className="mt-10 rounded-xl border border-dashed border-edge px-5 py-8 text-center text-sm text-paper-dim">
+          Photos and videos land here once it happens. For now, it&rsquo;s a plan — react and talk
+          it through above.
+        </p>
+      ) : (
+        <section className="mt-10">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold tracking-[-0.01em]">
+              The album
+              <span className="ml-2 text-sm font-normal text-paper-faint">
+                {event.media_count} {event.media_count === 1 ? 'photo' : 'photos'}
+              </span>
+            </h2>
+            <AddMemoriesButton variant="hero" context={{ eventId: event.id }} />
+          </div>
 
-        <Feed
-          initial={media}
-          initialCursor={media.length ? media[media.length - 1].created_at : null}
-          query={`event=${event.id}`}
-          emptyState={
-            <p className="max-w-md leading-relaxed text-paper-dim">
-              No photos in this album yet. Add the first with the button above — everyone
-              can keep adding to it.
-            </p>
-          }
-        />
-      </section>
+          <Feed
+            initial={media}
+            initialCursor={media.length ? media[media.length - 1].created_at : null}
+            query={`event=${event.id}`}
+            emptyState={
+              <p className="max-w-md leading-relaxed text-paper-dim">
+                No photos in this album yet. Add the first with the button above — everyone
+                can keep adding to it.
+              </p>
+            }
+          />
+        </section>
+      )}
     </Shell>
   )
 }
