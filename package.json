@@ -2,6 +2,7 @@
   "name": "reel",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "A private, invite-only family media hub.",
   "scripts": {
     "dev": "next dev",
@@ -9,6 +10,9 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "format": "prettier --write",
+    "format:check": "prettier --check",
     "check:sql": "node scripts/check-sql.mjs",
     "stream:signing-key": "node scripts/stream-signing-key.mjs",
     "r2:cors": "node scripts/r2-cors.mjs"
@@ -33,6 +37,7 @@
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.2.10",
+    "prettier": "^3.6.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3"
   }

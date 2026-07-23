@@ -82,6 +82,7 @@ export interface TaggedPerson {
   id: string
   name: string
   member_id: string | null
+  profile_id: string | null
   avatar_url: string | null
 }
 

@@ -2,6 +2,12 @@
 
 import * as tus from 'tus-js-client'
 import { classify, preparePhoto, type Kind } from '@/lib/client/media-prep'
+import {
+  removeRecoveryRecord,
+  saveRecoveryRecord,
+  type UploadRecoveryRecord,
+} from '@/lib/client/upload-recovery'
+import { matchRecoveredFiles, type FileIdentity } from '@/lib/client/upload-logic'
 import type { CropMetadata } from '@/lib/types'
 
 /**
@@ -42,6 +48,8 @@ export interface UploadItem {
   context: UploadContext
   duplicateOf?: string
   error?: string
+  warning?: string
+  recoveryIdentity?: FileIdentity
 }
 
 export interface UploadDraft {
@@ -55,7 +63,7 @@ export interface UploadDraft {
 /** The shared caption/tags/event a batch was given on the upload screen. */
 export interface UploadDetails {
   caption?: string
-  people?: { name: string }[]
+  people?: { name: string; memberId?: string | null; profileId?: string | null }[]
   eventId?: string | null
   takenAt?: string
   location?: string
@@ -71,6 +79,7 @@ export interface UploadContext {
 }
 
 const MAX_CONCURRENT = 2
+const MAX_CONCURRENT_PHOTOS = 1
 const MAX_PROCESSING_CHECKS = 4
 
 /**
@@ -106,6 +115,7 @@ export class UploadQueue {
   private items: UploadItem[] = []
   private listeners = new Set<(items: UploadItem[]) => void>()
   private running = 0
+  private photosRunning = 0
   private aborters = new Map<string, () => void>()
   private processingRunning = 0
   private processingQueue: { item: UploadItem; mediaId: string }[] = []
@@ -126,6 +136,15 @@ export class UploadQueue {
     if (!item) return
     Object.assign(item, changes)
     this.emit()
+    if (
+      'status' in changes ||
+      'mediaId' in changes ||
+      'uploadUrl' in changes ||
+      'error' in changes ||
+      'warning' in changes
+    ) {
+      this.persist(item)
+    }
   }
 
   add(drafts: UploadDraft[], context: UploadContext = {}) {
@@ -146,7 +165,68 @@ export class UploadQueue {
       })
     }
     this.emit()
+    for (const item of this.items.slice(-drafts.length)) this.persist(item)
     this.pump()
+  }
+
+  /**
+   * Restore rows that can continue without bytes (video processing and
+   * metadata-warning retries). Other records are returned for file reselection.
+   */
+  restore(records: UploadRecoveryRecord[]): UploadRecoveryRecord[] {
+    const needsFiles: UploadRecoveryRecord[] = []
+    for (const record of records) {
+      if (
+        (record.status === 'processing' && record.mediaId) ||
+        (record.status === 'ready' && record.mediaId && record.warning)
+      ) {
+        const placeholder = new File([], record.file.name, {
+          type: record.file.type,
+          lastModified: record.file.lastModified,
+        })
+        const item: UploadItem = {
+          ...record,
+          file: placeholder,
+          previewUrl: undefined,
+          ownsPreviewUrl: false,
+          recoveryIdentity: record.file,
+        }
+        this.items.push(item)
+        if (record.status === 'processing') this.queueProcessing(item, record.mediaId!)
+      } else {
+        needsFiles.push(record)
+      }
+    }
+    if (records.length !== needsFiles.length) this.emit()
+    return needsFiles
+  }
+
+  resume(
+    records: UploadRecoveryRecord[],
+    files: File[],
+  ): { resumed: number; missing: UploadRecoveryRecord[] } {
+    const { matches, missing } = matchRecoveredFiles(records, files)
+    for (const { record, file } of matches) {
+      const restartProcessedVideo =
+        record.kind === 'video' && record.status === 'error' && record.progress >= 1
+      this.items.push({
+        ...record,
+        file,
+        status: 'queued',
+        progress: 0,
+        error: undefined,
+        previewUrl: URL.createObjectURL(file),
+        ownsPreviewUrl: true,
+        ...(restartProcessedVideo ? { mediaId: undefined, uploadUrl: undefined } : {}),
+      })
+    }
+    if (matches.length) {
+      this.emit()
+      for (const { record } of matches) void removeRecoveryRecord(record.id)
+      for (const item of this.items.slice(-matches.length)) this.persist(item)
+      this.pump()
+    }
+    return { resumed: matches.length, missing }
   }
 
   retry(id: string) {
@@ -168,6 +248,7 @@ export class UploadQueue {
     const item = this.items.find((i) => i.id === id)
     if (item?.previewUrl && item.ownsPreviewUrl) URL.revokeObjectURL(item.previewUrl)
     this.items = this.items.filter((i) => i.id !== id)
+    void removeRecoveryRecord(id)
     this.emit()
     this.pump()
   }
@@ -179,10 +260,14 @@ export class UploadQueue {
    */
   clearFinished(options: { includeErrors?: boolean } = {}) {
     const isFinished = (item: UploadItem) =>
-      item.status === 'ready' || item.status === 'duplicate' || (options.includeErrors && item.status === 'error')
+      (item.status === 'ready' && !item.warning) ||
+      item.status === 'duplicate' ||
+      (options.includeErrors && item.status === 'error')
 
     for (const item of this.items) {
-      if (isFinished(item) && item.previewUrl && item.ownsPreviewUrl) URL.revokeObjectURL(item.previewUrl)
+      if (isFinished(item) && item.previewUrl && item.ownsPreviewUrl)
+        URL.revokeObjectURL(item.previewUrl)
+      if (isFinished(item)) void removeRecoveryRecord(item.id)
     }
     this.items = this.items.filter((item) => !isFinished(item))
     this.emit()
@@ -194,11 +279,17 @@ export class UploadQueue {
 
   private pump() {
     while (this.running < MAX_CONCURRENT) {
-      const next = this.items.find((i) => i.status === 'queued')
+      const next = this.items.find(
+        (item) =>
+          item.status === 'queued' &&
+          (item.kind === 'video' || this.photosRunning < MAX_CONCURRENT_PHOTOS),
+      )
       if (!next) return
       this.running += 1
+      if (next.kind === 'photo') this.photosRunning += 1
       void this.run(next).finally(() => {
         this.running -= 1
+        if (next.kind === 'photo') this.photosRunning -= 1
         this.pump()
       })
     }
@@ -210,10 +301,7 @@ export class UploadQueue {
   }
 
   private pumpProcessing() {
-    while (
-      this.processingRunning < MAX_PROCESSING_CHECKS &&
-      this.processingQueue.length > 0
-    ) {
+    while (this.processingRunning < MAX_PROCESSING_CHECKS && this.processingQueue.length > 0) {
       const next = this.processingQueue.shift()
       if (!next) return
       this.processingRunning += 1
@@ -237,9 +325,9 @@ export class UploadQueue {
    * upload. Best-effort: the memory is already safely in the archive either
    * way, and these can always be added from its detail page.
    */
-  private async applyDetails(mediaId: string, item: UploadItem) {
+  private async applyDetails(mediaId: string, item: UploadItem): Promise<string | null> {
     const details = item.context.details
-    if (!details) return
+    if (!details) return null
     const caption = details.caption?.trim()
     const people = details.people?.filter((p) => p.name.trim())
     const eventId = details.eventId
@@ -247,11 +335,11 @@ export class UploadQueue {
 
     const patch: Record<string, unknown> = {}
     if (caption) patch.caption = caption
-    if (people && people.length > 0) patch.people = people.map((p) => p.name)
+    if (people && people.length > 0) patch.people = people
     if (eventId) patch.eventId = eventId
     if (details.takenAt) patch.takenAt = details.takenAt
     if (location) patch.location = location
-    if (Object.keys(patch).length === 0) return
+    if (Object.keys(patch).length === 0) return null
 
     try {
       const response = await fetch(`/api/media/${mediaId}`, {
@@ -263,9 +351,22 @@ export class UploadQueue {
         const payload = await response.json().catch(() => ({}))
         throw new Error(payload.error || `Metadata update failed (${response.status}).`)
       }
+      return null
     } catch (error) {
       console.error('[reel] could not apply upload details', { mediaId, error })
+      return error instanceof Error
+        ? error.message
+        : 'The item was added, but its details were not saved.'
     }
+  }
+
+  async retryDetails(id: string) {
+    const item = this.items.find((entry) => entry.id === id)
+    if (!item?.mediaId) return
+    this.patch(id, { warning: 'Retrying details…' })
+    const warning = await this.applyDetails(item.mediaId, item)
+    this.patch(id, { warning: warning ?? undefined })
+    if (!warning && item.status === 'ready') void removeRecoveryRecord(id)
   }
 
   private async run(item: UploadItem) {
@@ -327,18 +428,29 @@ export class UploadQueue {
       [put.thumb, prepared.thumb, prepared.thumb.type],
     ]
 
-    let done = 0
+    const totalBytes = parts.reduce((sum, [, blob]) => sum + blob.size, 0)
+    let uploadedBytes = 0
     for (const [url, blob, contentType] of parts) {
-      await putPhotoPart(url, blob, contentType)
-      done += 1
-      this.patch(item.id, { progress: done / parts.length })
+      await putPhotoPart(
+        url,
+        blob,
+        contentType,
+        (loaded) => {
+          this.patch(item.id, {
+            progress: totalBytes ? (uploadedBytes + loaded) / totalBytes : 0,
+          })
+        },
+        (abort) => this.aborters.set(item.id, abort),
+      )
+      uploadedBytes += blob.size
+      this.patch(item.id, { progress: totalBytes ? uploadedBytes / totalBytes : 1 })
     }
 
-    await detailsPromise
+    const warning = await detailsPromise
     await postJson(`/api/media/${mediaId}/ready`, {
       linkToken: item.context.linkToken ?? null,
     })
-    this.patch(item.id, { status: 'ready', progress: 1 })
+    this.patch(item.id, { status: 'ready', progress: 1, warning: warning ?? undefined })
   }
 
   private async uploadVideo(item: UploadItem) {
@@ -390,9 +502,9 @@ export class UploadQueue {
       upload.start()
     })
 
-    await detailsPromise
+    const warning = await detailsPromise
     // Bytes are in; Cloudflare still has to transcode it for every screen.
-    this.patch(item.id, { status: 'processing', progress: 1 })
+    this.patch(item.id, { status: 'processing', progress: 1, warning: warning ?? undefined })
     // Transcoding can take minutes and must not occupy one of the two transfer
     // slots. A separate bounded monitor updates the row while the next upload
     // starts immediately.
@@ -427,6 +539,7 @@ export class UploadQueue {
         }
         if (data.status === 'ready') {
           this.patch(item.id, { status: 'ready' })
+          if (!item.warning) void removeRecoveryRecord(item.id)
           return
         }
         if (data.status === 'error') {
@@ -442,33 +555,76 @@ export class UploadQueue {
     // picks it up whenever Cloudflare finishes.
     this.patch(item.id, { status: 'processing' })
   }
+
+  private persist(item: UploadItem) {
+    if ((item.status === 'ready' || item.status === 'duplicate') && !item.warning) {
+      void removeRecoveryRecord(item.id)
+      return
+    }
+    void saveRecoveryRecord({
+      id: item.id,
+      file: {
+        name: item.recoveryIdentity?.name ?? item.file.name,
+        size: item.recoveryIdentity?.size ?? item.file.size,
+        lastModified: item.recoveryIdentity?.lastModified ?? item.file.lastModified,
+        type: item.recoveryIdentity?.type ?? item.file.type,
+      },
+      kind: item.kind,
+      status: item.status,
+      progress: item.progress,
+      contentHash: item.contentHash,
+      crop: item.crop,
+      durationSeconds: item.durationSeconds,
+      mediaId: item.mediaId,
+      uploadUrl: item.uploadUrl,
+      context: item.context,
+      error: item.error,
+      warning: item.warning,
+      updatedAt: Date.now(),
+    })
+  }
 }
 
-async function putPhotoPart(url: string, blob: Blob, contentType: string): Promise<void> {
+async function putPhotoPart(
+  url: string,
+  blob: Blob,
+  contentType: string,
+  onProgress: (loaded: number) => void,
+  registerAbort: (abort: () => void) => void,
+): Promise<void> {
   const retryable = new Set([408, 425, 429])
   let lastNetworkError: unknown
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      // Content-Type is part of the signature: send anything else and R2
-      // answers 403 SignatureDoesNotMatch.
-      const response = await fetch(url, {
-        method: 'PUT',
-        body: blob,
-        headers: { 'Content-Type': contentType },
+      const status = await new Promise<number>((resolve, reject) => {
+        const request = new XMLHttpRequest()
+        registerAbort(() => request.abort())
+        request.open('PUT', url)
+        // Content-Type is part of the signature: send anything else and R2
+        // answers 403 SignatureDoesNotMatch.
+        request.setRequestHeader('Content-Type', contentType)
+        request.upload.onprogress = (event) => {
+          if (event.lengthComputable) onProgress(event.loaded)
+        }
+        request.onload = () => resolve(request.status)
+        request.onerror = () => reject(new Error('The network dropped during the photo upload.'))
+        request.onabort = () => reject(new Error('Upload cancelled.'))
+        request.send(blob)
       })
-      if (response.ok) return
-      if (response.status === 403) {
+      if (status >= 200 && status < 300) return
+      if (status === 403) {
         throw new Error('The upload link expired before this finished. Try again.')
       }
-      if (!(retryable.has(response.status) || response.status >= 500) || attempt === 2) {
-        throw new Error(`The photo did not upload (${response.status}).`)
+      if (!(retryable.has(status) || status >= 500) || attempt === 2) {
+        throw new Error(`The photo did not upload (${status}).`)
       }
     } catch (error) {
       if (
         error instanceof Error &&
         (error.message.startsWith('The upload link expired') ||
-          error.message.startsWith('The photo did not upload'))
+          error.message.startsWith('The photo did not upload') ||
+          error.message.startsWith('Upload cancelled'))
       ) {
         throw error
       }

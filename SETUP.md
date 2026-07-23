@@ -33,9 +33,10 @@ missing, by name.
 
 ### Run the migration
 
-**SQL Editor → New query**, paste the whole of
-[`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), run it.
-It is safe to run more than once.
+**SQL Editor → New query**, run every file in
+[`supabase/migrations`](supabase/migrations) in filename order. Existing
+installations only need files they have not run yet. Every migration is safe to
+run more than once.
 
 That single file creates every table, turns on Row Level Security, and installs
 the trigger that refuses any signup whose email isn't on the guest list.
@@ -90,7 +91,7 @@ file, per view. Nothing is ever on a public URL.
 
 ### CORS — do not skip this
 
-The phone uploads photos *straight to R2*, which means the browser needs
+The phone uploads photos _straight to R2_, which means the browser needs
 permission. Without it, videos will upload fine and photos will fail with an
 opaque CORS error.
 
@@ -107,7 +108,7 @@ After deploying, run it again with your live URL:
 npm run r2:cors -- https://your-app.vercel.app
 ```
 
-> Cloudflare has *two* different CORS JSON formats — the dashboard uses one, the
+> Cloudflare has _two_ different CORS JSON formats — the dashboard uses one, the
 > API and wrangler use another. The script knows the difference; if you're
 > copying from somewhere else, that's a likely reason it silently doesn't work.
 
@@ -151,12 +152,14 @@ is a miserable hour to debug.
 
 ## Checks
 
-| Command | What it does |
-| --- | --- |
-| `npm run check:sql` | Applies the migration to a real Postgres and asserts the schema behaves |
-| `npm run typecheck` | TypeScript |
-| `npm run lint` | ESLint |
-| `npm run build` | Production build |
+| Command                     | What it does                                                            |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `npm run check:sql`         | Applies the migration to a real Postgres and asserts the schema behaves |
+| `npm run typecheck`         | TypeScript                                                              |
+| `npm run lint`              | ESLint                                                                  |
+| `npm test`                  | Fast unit tests for upload recovery and crop geometry                   |
+| `npm run format -- <files>` | Format only the files you name                                          |
+| `npm run build`             | Production build                                                        |
 
 ---
 
@@ -172,7 +175,7 @@ actually running.
 **Videos upload, photos don't** — R2 CORS. See above. If the upload error
 mentions "cloud storage" or CORS, this is it. Vercel gives a project several
 working domains (the production alias, `<project>-<team>.vercel.app`, any
-custom domain) — run `npm run r2:cors -- <url>` once for *every* origin the
+custom domain) — run `npm run r2:cors -- <url>` once for _every_ origin the
 family actually opens the app from, not just the first one you tried. The
 in-app error message names this exact fix so nobody has to guess twice.
 

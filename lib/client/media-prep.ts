@@ -1,6 +1,7 @@
 'use client'
 
 import type { CropMetadata } from '@/lib/types'
+import { cropGeometry, drawCrop } from '@/lib/client/crop-geometry'
 
 /**
  * Getting a phone's file ready to upload.
@@ -61,19 +62,6 @@ async function decode(file: Blob): Promise<ImageBitmap> {
   }
 }
 
-function aspectValue(crop: CropMetadata, width: number, height: number): number {
-  const aspect = crop.aspect
-  if (aspect === '1:1') return 1
-  if (aspect === '4:3') return 4 / 3
-  if (aspect === '3:2') return 3 / 2
-  if (aspect === '16:9') return 16 / 9
-  if (aspect === '9:16') return 9 / 16
-  if (aspect === 'free' && crop.freeAspect && Number.isFinite(crop.freeAspect)) {
-    return clamp(crop.freeAspect, 0.4, 2.5)
-  }
-  return width / height
-}
-
 export const DEFAULT_CROP: CropMetadata = {
   aspect: 'free',
   zoom: 1,
@@ -82,111 +70,24 @@ export const DEFAULT_CROP: CropMetadata = {
   rotation: 0,
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
-}
-
-function normalizeCrop(crop?: CropMetadata | null): CropMetadata {
-  const rotation = crop?.rotation ?? 0
-  return {
-    aspect: crop?.aspect ?? 'free',
-    freeAspect: crop?.freeAspect && Number.isFinite(crop.freeAspect)
-      ? clamp(crop.freeAspect, 0.4, 2.5)
-      : undefined,
-    zoom: clamp(crop?.zoom ?? 1, 1, 3),
-    x: clamp(crop?.x ?? 0, -1, 1),
-    y: clamp(crop?.y ?? 0, -1, 1),
-    rotation: rotation === 90 || rotation === 180 || rotation === 270 ? rotation : 0,
-  }
-}
-
-interface CropSource {
-  image: CanvasImageSource
-  backingCanvas?: HTMLCanvasElement
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-/**
- * Rotates the decoded photo once and describes the selected source rectangle.
- *
- * Display and thumbnail encoding share this canvas. Previously each derivative
- * created its own full-resolution rotated canvas in parallel, which could
- * briefly hold several copies of a large phone photo in memory.
- */
-function createCropSource(
-  bitmap: ImageBitmap,
-  cropInput?: CropMetadata | null,
-): CropSource {
-  const crop = normalizeCrop(cropInput)
-  const quarterTurn = crop.rotation === 90 || crop.rotation === 270
-  const rotatedWidth = quarterTurn ? bitmap.height : bitmap.width
-  const rotatedHeight = quarterTurn ? bitmap.width : bitmap.height
-  const targetAspect = aspectValue(crop, rotatedWidth, rotatedHeight)
-
-  let cropWidth = rotatedWidth
-  let cropHeight = rotatedHeight
-  if (rotatedWidth / rotatedHeight > targetAspect) cropWidth = rotatedHeight * targetAspect
-  else cropHeight = rotatedWidth / targetAspect
-  cropWidth /= crop.zoom
-  cropHeight /= crop.zoom
-
-  const travelX = Math.max(0, rotatedWidth - cropWidth)
-  const travelY = Math.max(0, rotatedHeight - cropHeight)
-
-  const source = {
-    image: bitmap as CanvasImageSource,
-    x: travelX * ((crop.x + 1) / 2),
-    y: travelY * ((crop.y + 1) / 2),
-    width: cropWidth,
-    height: cropHeight,
-  }
-  if (crop.rotation === 0) return source
-
-  const rotated = document.createElement('canvas')
-  rotated.width = rotatedWidth
-  rotated.height = rotatedHeight
-  const rotatedContext = rotated.getContext('2d')
-  if (!rotatedContext) throw new Error('This browser could not prepare the photo.')
-  rotatedContext.translate(rotatedWidth / 2, rotatedHeight / 2)
-  rotatedContext.rotate((crop.rotation * Math.PI) / 180)
-  rotatedContext.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2)
-
-  return {
-    ...source,
-    image: rotated,
-    backingCanvas: rotated,
-  }
-}
-
 /** Draws one web-sized derivative. The source bitmap and original stay intact. */
 async function encode(
-  source: CropSource,
+  bitmap: ImageBitmap,
+  crop: CropMetadata | null | undefined,
   maxEdge: number,
   quality: number,
 ): Promise<{ blob: Blob; width: number; height: number }> {
-  const scale = Math.min(1, maxEdge / Math.max(source.width, source.height))
-  const width = Math.max(1, Math.round(source.width * scale))
-  const height = Math.max(1, Math.round(source.height * scale))
+  const geometry = cropGeometry(bitmap.width, bitmap.height, crop)
+  const scale = Math.min(1, maxEdge / Math.max(geometry.width, geometry.height))
+  const width = Math.max(1, Math.round(geometry.width * scale))
+  const height = Math.max(1, Math.round(geometry.height * scale))
 
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('This browser would not give us a canvas to work with.')
-  ctx.drawImage(
-    source.image,
-    source.x,
-    source.y,
-    source.width,
-    source.height,
-    0,
-    0,
-    width,
-    height,
-  )
+  drawCrop(ctx, bitmap, bitmap.width, bitmap.height, crop, width, height)
 
   try {
     const blob = await new Promise<Blob | null>((resolve) => {
@@ -218,16 +119,11 @@ export interface PreparedPhoto {
   previewUrl: string
 }
 
-export async function preparePhoto(
-  file: File,
-  crop?: CropMetadata | null,
-): Promise<PreparedPhoto> {
+export async function preparePhoto(file: File, crop?: CropMetadata | null): Promise<PreparedPhoto> {
   const bitmap = await decode(file)
-  let source: CropSource | null = null
   try {
-    source = createCropSource(bitmap, crop)
-    const display = await encode(source, 2560, 0.86)
-    const thumb = await encode(source, 640, 0.72)
+    const display = await encode(bitmap, crop, 2560, 0.86)
+    const thumb = await encode(bitmap, crop, 640, 0.72)
     return {
       display: display.blob,
       thumb: thumb.blob,
@@ -237,12 +133,6 @@ export async function preparePhoto(
       previewUrl: URL.createObjectURL(thumb.blob),
     }
   } finally {
-    if (source) {
-      if (source.backingCanvas) {
-        source.backingCanvas.width = 1
-        source.backingCanvas.height = 1
-      }
-    }
     bitmap.close()
   }
 }
@@ -253,11 +143,9 @@ export async function preparePhotoBlob(
   crop: CropMetadata,
 ): Promise<Pick<PreparedPhoto, 'display' | 'thumb' | 'width' | 'height' | 'previewUrl'>> {
   const bitmap = await decode(blob)
-  let source: CropSource | null = null
   try {
-    source = createCropSource(bitmap, crop)
-    const display = await encode(source, 2560, 0.86)
-    const thumb = await encode(source, 640, 0.72)
+    const display = await encode(bitmap, crop, 2560, 0.86)
+    const thumb = await encode(bitmap, crop, 640, 0.72)
     return {
       display: display.blob,
       thumb: thumb.blob,
@@ -266,12 +154,20 @@ export async function preparePhotoBlob(
       previewUrl: URL.createObjectURL(thumb.blob),
     }
   } finally {
-    if (source) {
-      if (source.backingCanvas) {
-        source.backingCanvas.width = 1
-        source.backingCanvas.height = 1
-      }
-    }
+    bitmap.close()
+  }
+}
+
+/**
+ * Convert HEIC/HEIF into a browser-safe review image without touching the
+ * original File. Callers run this through a one-at-a-time preview queue.
+ */
+export async function createBrowserPhotoPreview(file: File): Promise<string> {
+  const bitmap = await decode(file)
+  try {
+    const preview = await encode(bitmap, DEFAULT_CROP, 1280, 0.8)
+    return URL.createObjectURL(preview.blob)
+  } finally {
     bitmap.close()
   }
 }
@@ -338,8 +234,12 @@ export async function exifTakenAt(file: File): Promise<Date | null> {
         if (!m) return null
 
         const date = new Date(
-          Number(m[1]), Number(m[2]) - 1, Number(m[3]),
-          Number(m[4]), Number(m[5]), Number(m[6]),
+          Number(m[1]),
+          Number(m[2]) - 1,
+          Number(m[3]),
+          Number(m[4]),
+          Number(m[5]),
+          Number(m[6]),
         )
         return Number.isNaN(date.getTime()) ? null : date
       }

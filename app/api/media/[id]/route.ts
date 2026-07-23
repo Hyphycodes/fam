@@ -7,10 +7,7 @@ import { deleteVideo } from '@/lib/stream'
 import { deleteObjects } from '@/lib/r2'
 import { isConfigured } from '@/lib/env'
 
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!(await getActor())) return fail('Not signed in.', 401)
     const { id } = await params
@@ -28,14 +25,11 @@ interface Patch {
   eventId?: string | null
   takenAt?: string
   location?: string | null
-  people?: string[]
+  people?: (string | { name?: string; memberId?: string | null; profileId?: string | null })[]
 }
 
 /** Caption it, star it, file it under an event, say who's in it. */
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const actor = await getActor()
     if (!actor) return fail('Not signed in.', 401)
@@ -48,7 +42,8 @@ export async function PATCH(
     if ('caption' in body) changes.caption = (body.caption ?? '').trim().slice(0, 2000) || null
     if ('favorite' in body) changes.favorite = Boolean(body.favorite)
     if ('eventId' in body) changes.event_id = body.eventId || null
-    if ('location' in body) changes.location_text = (body.location ?? '').trim().slice(0, 200) || null
+    if ('location' in body)
+      changes.location_text = (body.location ?? '').trim().slice(0, 200) || null
     if (body.takenAt) {
       const date = new Date(body.takenAt)
       if (!Number.isNaN(date.getTime())) changes.taken_at = date.toISOString()
@@ -61,42 +56,122 @@ export async function PATCH(
 
     // People are replaced wholesale — the editor always sends the full list.
     if (Array.isArray(body.people)) {
-      const names = [
+      const requested = [
         ...new Map(
           body.people
-            .map((name) => name.trim())
-            .filter(Boolean)
-            .map((name) => [name.toLocaleLowerCase(), name]),
+            .map((person) =>
+              typeof person === 'string'
+                ? { name: person.trim(), memberId: null, profileId: null }
+                : {
+                    name: (person.name ?? '').trim(),
+                    memberId: person.memberId || null,
+                    profileId: person.profileId || null,
+                  },
+            )
+            .filter((person) => person.name)
+            .map((person) => [
+              person.memberId ?? person.profileId ?? person.name.toLocaleLowerCase(),
+              person,
+            ]),
         ).values(),
       ].slice(0, 30)
 
+      const memberIds = requested.flatMap((person) => (person.memberId ? [person.memberId] : []))
+      const profileIds = requested.flatMap((person) => (person.profileId ? [person.profileId] : []))
+      const [{ data: members }, { data: profiles }] = await Promise.all([
+        memberIds.length
+          ? db.from('members').select('id, display_name').in('id', memberIds)
+          : Promise.resolve({ data: [] }),
+        profileIds.length
+          ? db.from('profiles').select('id, display_name').in('id', profileIds)
+          : Promise.resolve({ data: [] }),
+      ])
+      const memberName = new Map(
+        ((members ?? []) as { id: string; display_name: string }[]).map((member) => [
+          member.id,
+          member.display_name,
+        ]),
+      )
+      const profileName = new Map(
+        ((profiles ?? []) as { id: string; display_name: string }[]).map((profile) => [
+          profile.id,
+          profile.display_name,
+        ]),
+      )
+
       const personIds: string[] = []
-      for (const name of names) {
-        // `limit(1)` rather than maybeSingle(): the unique index on name is
-        // case-sensitive, so "Bob" and "bob" can both exist and maybeSingle
-        // would throw rather than pick one.
-        const { data: matches } = await db.from('people').select('id, member_id').ilike('name', name).limit(1)
+      for (const requestedPerson of requested) {
+        const memberId =
+          requestedPerson.memberId && memberName.has(requestedPerson.memberId)
+            ? requestedPerson.memberId
+            : null
+        const profileId =
+          requestedPerson.profileId && profileName.has(requestedPerson.profileId)
+            ? requestedPerson.profileId
+            : null
+        const name =
+          (memberId ? memberName.get(memberId) : null) ??
+          (profileId ? profileName.get(profileId) : null) ??
+          requestedPerson.name
+
+        let matches: { id: string; member_id: string | null; profile_id: string | null }[] | null =
+          null
+        if (memberId) {
+          const result = await db
+            .from('people')
+            .select('id, member_id, profile_id')
+            .eq('member_id', memberId)
+            .limit(1)
+          matches = result.data
+        } else if (profileId) {
+          const result = await db
+            .from('people')
+            .select('id, member_id, profile_id')
+            .eq('profile_id', profileId)
+            .limit(1)
+          matches = result.data
+        }
+        if (!matches?.length) {
+          const result = await db
+            .from('people')
+            .select('id, member_id, profile_id')
+            .ilike('name', name)
+            .limit(10)
+          const compatible = result.data?.find(
+            (person) =>
+              (!memberId || !person.member_id || person.member_id === memberId) &&
+              (!profileId || !person.profile_id || person.profile_id === profileId),
+          )
+          matches = compatible ? [compatible] : []
+        }
 
         let personId = matches?.[0]?.id
-        let linkedMember = matches?.[0]?.member_id ?? null
-
         if (!personId) {
-          const { data: created } = await db.from('people').insert({ name }).select('id').single()
+          const { data: created, error: createError } = await db
+            .from('people')
+            .insert({ name, member_id: memberId, profile_id: profileId })
+            .select('id')
+            .single()
+          if (createError) {
+            return fail(`Could not add ${name}: ${createError.message}`, 500)
+          }
           personId = created?.id
         }
         if (!personId) continue
 
-        // If this name is a member's, link the person row so the tag carries
-        // that member's avatar and their "By person" page merges cleanly.
-        if (!linkedMember) {
-          const { data: member } = await db
-            .from('members')
-            .select('id')
-            .ilike('display_name', name)
-            .limit(1)
-          if (member?.[0]) {
-            await db.from('people').update({ member_id: member[0].id }).eq('id', personId)
-            linkedMember = member[0].id
+        const identityChanges: Record<string, string> = {}
+        if (memberId && !matches?.[0]?.member_id) identityChanges.member_id = memberId
+        if (profileId && !matches?.[0]?.profile_id) identityChanges.profile_id = profileId
+        if (Object.keys(identityChanges).length) {
+          const { error: identityError } = await db
+            .from('people')
+            .update(identityChanges)
+            .eq('id', personId)
+          if (identityError) {
+            return fail(
+              `Could not link ${name} to the right profile: ${identityError.message}`,
+              500,
+            )
           }
         }
         if (!personIds.includes(personId)) personIds.push(personId)
@@ -106,9 +181,11 @@ export async function PATCH(
       if (untagError) return fail(`Could not update the tags: ${untagError.message}`, 500)
 
       if (personIds.length) {
-        const { error: tagError } = await db.from('media_people').insert(
-          personIds.map((person_id) => ({ media_id: id, person_id, tagged_by: actor.memberId })),
-        )
+        const { error: tagError } = await db
+          .from('media_people')
+          .insert(
+            personIds.map((person_id) => ({ media_id: id, person_id, tagged_by: actor.memberId })),
+          )
         if (tagError) return fail(`Could not update the tags: ${tagError.message}`, 500)
       }
     }
@@ -121,10 +198,7 @@ export async function PATCH(
 }
 
 /** Removes the row and then best-effort deletes its storage objects. */
-export async function DELETE(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const actor = await getActor()
     if (!actor) return fail('Not signed in.', 401)

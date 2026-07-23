@@ -6,6 +6,7 @@ import { avatarUrl } from '@/lib/community/avatars'
 export interface TagSuggestion {
   name: string
   memberId: string | null
+  profileId: string | null
   avatarUrl: string | null
 }
 
@@ -22,14 +23,24 @@ export async function GET() {
 
     const [{ data: members }, { data: people }] = await Promise.all([
       db.from('members').select('id, display_name, avatar_path').order('display_name'),
-      db.from('people').select('name, member_id').order('name'),
+      db.from('people').select('name, member_id, profile_id').order('name'),
     ])
 
-    const byName = new Map<string, TagSuggestion>()
-    for (const person of (people ?? []) as { name: string; member_id: string | null }[]) {
-      byName.set(person.name.toLowerCase(), {
+    const suggestionsByIdentity = new Map<string, TagSuggestion>()
+    for (const person of (people ?? []) as {
+      name: string
+      member_id: string | null
+      profile_id: string | null
+    }[]) {
+      const key = person.member_id
+        ? `member:${person.member_id}`
+        : person.profile_id
+          ? `profile:${person.profile_id}`
+          : `name:${person.name.toLowerCase()}`
+      suggestionsByIdentity.set(key, {
         name: person.name,
         memberId: person.member_id,
+        profileId: person.profile_id,
         avatarUrl: null,
       })
     }
@@ -38,14 +49,17 @@ export async function GET() {
       display_name: string
       avatar_path: string | null
     }[]) {
-      byName.set(member.display_name.toLowerCase(), {
+      suggestionsByIdentity.set(`member:${member.id}`, {
         name: member.display_name,
         memberId: member.id,
+        profileId: null,
         avatarUrl: avatarUrl(member.avatar_path),
       })
     }
 
-    const suggestions = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+    const suggestions = [...suggestionsByIdentity.values()].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    )
     return ok({ suggestions })
   } catch (error) {
     return handleError(error, 'community/tag-suggestions')

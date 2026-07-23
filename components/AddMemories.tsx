@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { UploadQueue, type UploadContext, type UploadItem } from '@/lib/client/uploader'
 import { UploadDetailsSheet } from '@/components/UploadDetailsSheet'
+import { loadRecoveryRecords, type UploadRecoveryRecord } from '@/lib/client/upload-recovery'
+import { boundedOverallProgress } from '@/lib/client/upload-logic'
 
 /**
  * "Add memories".
@@ -17,9 +19,22 @@ import { UploadDetailsSheet } from '@/components/UploadDetailsSheet'
 // Module-level so an in-flight upload survives navigating between pages.
 const queue = new UploadQueue()
 let snapshot: UploadItem[] = []
+let recoverySnapshot: UploadRecoveryRecord[] = []
+let recoveryLoad: Promise<UploadRecoveryRecord[]> | null = null
+let recoveryRestored = false
 queue.subscribe((items) => {
   snapshot = items
 })
+
+async function restoreRecoveryQueue() {
+  if (!recoveryLoad) recoveryLoad = loadRecoveryRecords()
+  const records = await recoveryLoad
+  if (!recoveryRestored) {
+    recoverySnapshot = queue.restore(records)
+    recoveryRestored = true
+  }
+  return recoverySnapshot
+}
 
 function useUploads(): UploadItem[] {
   return useSyncExternalStore(
@@ -110,6 +125,10 @@ function UploadTray() {
   const items = useUploads()
   const router = useRouter()
   const previouslyBusy = useRef(false)
+  const recoveryInput = useRef<HTMLInputElement>(null)
+  const [recoveries, setRecoveries] = useState<UploadRecoveryRecord[]>(recoverySnapshot)
+  const [trayPage, setTrayPage] = useState(0)
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
 
   const busy = items.some((i) => !['ready', 'duplicate', 'error'].includes(i.status))
   const anyFailed = items.some((i) => i.status === 'error')
@@ -132,7 +151,17 @@ function UploadTray() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [busy])
 
-  if (items.length === 0) return null
+  useEffect(() => {
+    let live = true
+    void restoreRecoveryQueue().then((records) => {
+      if (live) setRecoveries(records)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  if (items.length === 0 && recoveries.length === 0) return null
 
   const done = items.filter((i) => i.status === 'ready').length
   const failed = items.filter((i) => i.status === 'error').length
@@ -140,10 +169,11 @@ function UploadTray() {
   const finished = done + failed + duplicates
   const photos = items.filter((i) => i.kind === 'photo' && i.status === 'ready').length
   const videos = items.filter((i) => i.kind === 'video' && i.status === 'ready').length
-  const overall = items.length
-    ? Math.round(items.reduce((sum, item) => sum + item.progress, 0) / items.length * 100)
-    : 0
+  const overall = boundedOverallProgress(items)
   const albumId = items.find((item) => item.context.details?.eventId)?.context.details?.eventId
+  const trayPageCount = Math.max(1, Math.ceil(items.length / 20))
+  const safeTrayPage = Math.min(trayPage, trayPageCount - 1)
+  const visibleItems = items.slice(safeTrayPage * 20, (safeTrayPage + 1) * 20)
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center px-4 pb-[calc(5.75rem+env(safe-area-inset-bottom))] sm:pb-32">
@@ -151,21 +181,69 @@ function UploadTray() {
         className="pointer-events-auto w-full max-w-md overflow-hidden rounded-2xl border border-edge bg-ink-raised/95 shadow-2xl backdrop-blur-xl animate-rise"
         role="status"
         aria-live="polite"
-        aria-label={busy ? `Uploading items, ${finished} of ${items.length} complete` : 'Upload finished'}
+        aria-label={
+          busy ? `Uploading items, ${finished} of ${items.length} complete` : 'Upload finished'
+        }
       >
+        <input
+          ref={recoveryInput}
+          type="file"
+          multiple
+          accept="image/*,video/*"
+          className="sr-only"
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? [])
+            event.target.value = ''
+            if (!files.length) return
+            const result = queue.resume(recoveries, files)
+            recoverySnapshot = result.missing
+            setRecoveries(result.missing)
+            setRecoveryMessage(
+              result.resumed > 0
+                ? `${result.resumed} ${result.resumed === 1 ? 'upload' : 'uploads'} resumed${result.missing.length ? ` · ${result.missing.length} still need files` : ''}.`
+                : 'Those files did not match the interrupted uploads.',
+            )
+          }}
+        />
+        {recoveries.length > 0 && (
+          <div className="border-b border-edge bg-ember/8 px-5 py-4">
+            <p className="text-sm font-semibold">
+              {recoveries.length} interrupted {recoveries.length === 1 ? 'upload' : 'uploads'}
+            </p>
+            <p className="mt-1 text-xs text-paper-dim">
+              Reselect the same files to continue. Video uploads resume from their saved offset.
+            </p>
+            <button
+              type="button"
+              onClick={() => recoveryInput.current?.click()}
+              className="btn btn-ghost mt-3 px-3 py-2 text-xs"
+            >
+              Reselect files
+            </button>
+            {recoveryMessage && <p className="mt-2 text-xs text-paper-dim">{recoveryMessage}</p>}
+          </div>
+        )}
         <div className="flex items-center justify-between px-5 pt-4 pb-3">
           <div>
-          <p className="text-lg font-semibold">
-            {busy
-              ? `Uploading ${items.length} ${items.length === 1 ? 'item' : 'items'}`
-              : `${done} ${done === 1 ? 'item' : 'items'} added`}
-          </p>
-          <p className="mt-0.5 text-xs text-paper-faint">
-            {busy ? `${overall}% overall` : `${photos} photos · ${videos} videos${failed ? ` · ${failed} failed` : ''}${duplicates ? ` · ${duplicates} already added` : ''}`}
-          </p>
+            <p className="text-lg font-semibold">
+              {items.length === 0
+                ? 'Uploads interrupted'
+                : busy
+                  ? `Uploading ${items.length} ${items.length === 1 ? 'item' : 'items'}`
+                  : `${done} ${done === 1 ? 'item' : 'items'} added`}
+            </p>
+            <p className="mt-0.5 text-xs text-paper-faint">
+              {items.length === 0
+                ? 'Reselect the original files to continue.'
+                : busy
+                  ? `${overall}% overall`
+                  : `${photos} photos · ${videos} videos${failed ? ` · ${failed} failed` : ''}${duplicates ? ` · ${duplicates} already added` : ''}`}
+            </p>
           </div>
           {busy ? (
-            <span className="text-sm text-paper-dim">{finished}/{items.length}</span>
+            <span className="text-sm text-paper-dim">
+              {finished}/{items.length}
+            </span>
           ) : (
             <button
               onClick={() => queue.clearFinished({ includeErrors: true })}
@@ -177,15 +255,59 @@ function UploadTray() {
         </div>
 
         <ul className="max-h-72 space-y-1 overflow-y-auto px-3 pb-3">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <UploadRow key={item.id} item={item} />
           ))}
         </ul>
+        {items.length > 20 && (
+          <div className="mx-5 mb-3 flex items-center justify-between text-xs text-paper-dim">
+            <button
+              type="button"
+              onClick={() => setTrayPage((current) => Math.max(0, current - 1))}
+              disabled={safeTrayPage === 0}
+              className="hover:text-paper disabled:opacity-35"
+            >
+              Previous
+            </button>
+            <span>
+              {safeTrayPage + 1} of {trayPageCount}
+            </span>
+            <button
+              type="button"
+              onClick={() => setTrayPage((current) => Math.min(trayPageCount - 1, current + 1))}
+              disabled={safeTrayPage >= trayPageCount - 1}
+              className="hover:text-paper disabled:opacity-35"
+            >
+              Next
+            </button>
+          </div>
+        )}
         {!busy && (
           <div className="flex flex-wrap gap-2 border-t border-edge px-5 py-3">
-            <Link href="/you" className="btn btn-ghost px-3 py-2 text-xs">View uploads</Link>
-            {albumId && <Link href={`/collection/event/${albumId}`} className="btn btn-ghost px-3 py-2 text-xs">Open album</Link>}
-            {anyFailed && <button type="button" onClick={() => items.filter((item) => item.status === 'error').forEach((item) => queue.retry(item.id))} className="btn btn-primary px-3 py-2 text-xs">Retry failed</button>}
+            <Link href="/you" className="btn btn-ghost px-3 py-2 text-xs">
+              View uploads
+            </Link>
+            {albumId && (
+              <Link
+                href={`/collection/event/${albumId}`}
+                className="btn btn-ghost px-3 py-2 text-xs"
+              >
+                Open album
+              </Link>
+            )}
+            {anyFailed && (
+              <button
+                type="button"
+                onClick={() =>
+                  items
+                    .filter((item) => item.status === 'error')
+                    .forEach((item) => queue.retry(item.id))
+                }
+                className="btn btn-primary px-3 py-2 text-xs"
+              >
+                Retry failed
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -199,10 +321,21 @@ function UploadRow({ item }: { item: UploadItem }) {
   return (
     <li className="flex items-center gap-3 rounded-xl px-2 py-2">
       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-ink-high">
-        {item.previewUrl && item.kind === 'video' ? (
-          <video src={item.previewUrl} muted preload="metadata" className="h-full w-full object-cover" />
+        {item.kind === 'video' ? (
+          <span
+            className="grid h-full place-items-center text-xs text-paper-faint"
+            aria-hidden="true"
+          >
+            ▶
+          </span>
         ) : item.previewUrl ? (
-          <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
+          <img
+            src={item.previewUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover"
+          />
         ) : (
           <div className="h-full w-full animate-sweep" />
         )}
@@ -214,7 +347,9 @@ function UploadRow({ item }: { item: UploadItem }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm text-paper-soft">{item.file.name}</p>
         <p className="text-xs text-paper-dim">
-          {item.status === 'error' ? (
+          {item.warning ? (
+            <span className="text-ember-soft">{item.warning}</span>
+          ) : item.status === 'error' ? (
             <span className="text-ember-soft">{item.error}</span>
           ) : item.status === 'preparing' ? (
             'Preparing'
@@ -250,6 +385,16 @@ function UploadRow({ item }: { item: UploadItem }) {
           className="shrink-0 rounded-full border border-edge-strong px-3 py-1 text-xs text-paper-soft transition-colors hover:bg-ink-hover hover:text-paper"
         >
           Retry
+        </button>
+      )}
+      {item.warning && item.mediaId && (
+        <button
+          type="button"
+          onClick={() => void queue.retryDetails(item.id)}
+          disabled={item.warning === 'Retrying details…'}
+          className="shrink-0 rounded-full border border-edge-strong px-3 py-1 text-xs text-paper-soft transition-colors hover:bg-ink-hover hover:text-paper disabled:opacity-50"
+        >
+          Retry details
         </button>
       )}
     </li>

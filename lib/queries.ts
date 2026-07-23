@@ -140,7 +140,10 @@ export async function getEvents(db: DB): Promise<(EventRow & { media_count: numb
     .from('media')
     .select('event_id')
     .eq('status', 'ready')
-    .in('event_id', rows.map((e) => e.id))
+    .in(
+      'event_id',
+      rows.map((e) => e.id),
+    )
 
   const tally = new Map<string, number>()
   for (const row of (counts ?? []) as { event_id: string | null }[]) {
@@ -242,10 +245,7 @@ export async function getBrowseCovers(
   const peopleByMedia = new Map<string, string[]>()
   for (const tag of (tagData ?? []) as { media_id: string; person_id: string }[]) {
     if (!candidateIds.has(tag.media_id)) continue
-    peopleByMedia.set(tag.media_id, [
-      ...(peopleByMedia.get(tag.media_id) ?? []),
-      tag.person_id,
-    ])
+    peopleByMedia.set(tag.media_id, [...(peopleByMedia.get(tag.media_id) ?? []), tag.person_id])
   }
 
   const personCoverIds = new Map<string, string>()
@@ -269,11 +269,7 @@ export async function getBrowseCovers(
   }
 
   const coverIds = [
-    ...new Set([
-      ...personCoverIds.values(),
-      ...eventCoverIds.values(),
-      ...yearCoverIds.values(),
-    ]),
+    ...new Set([...personCoverIds.values(), ...eventCoverIds.values(), ...yearCoverIds.values()]),
   ]
   if (coverIds.length === 0) return empty
 
@@ -350,7 +346,10 @@ export async function getUploadLinks(admin: DB, baseUrl: string): Promise<Upload
   const { data: events } = await admin
     .from('events')
     .select('id, name')
-    .in('id', rows.map((r) => r.event_id))
+    .in(
+      'id',
+      rows.map((r) => r.event_id),
+    )
 
   const nameById = new Map(
     ((events ?? []) as { id: string; name: string }[]).map((e) => [e.id, e.name]),
@@ -424,7 +423,10 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
     db.from('reactions').select('media_id').in('media_id', ids),
     db.from('comments').select('media_id').in('media_id', ids),
     db.from('voice_notes').select('media_id').in('media_id', ids),
-    db.from('media_people').select('media_id, people(id, name, member_id)').in('media_id', ids),
+    db
+      .from('media_people')
+      .select('media_id, people(id, name, member_id, profile_id)')
+      .in('media_id', ids),
   ])
 
   const nameById = new Map(
@@ -447,7 +449,12 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
   // Community members: uploaders and tagged people alike resolve to a name and
   // an avatar. Collected in one pass so a feed page presigns nothing extra.
   const taggedMemberIds = new Set<string>()
-  type TagPersonRow = { id: string; name: string; member_id: string | null }
+  type TagPersonRow = {
+    id: string
+    name: string
+    member_id: string | null
+    profile_id: string | null
+  }
   for (const row of (tags.data ?? []) as { people: TagPersonRow | TagPersonRow[] | null }[]) {
     const list = Array.isArray(row.people) ? row.people : row.people ? [row.people] : []
     for (const p of list) if (p.member_id) taggedMemberIds.add(p.member_id)
@@ -476,7 +483,12 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
   const peopleByMedia = new Map<string, TaggedPerson[]>()
   // PostgREST returns an embedded to-one relation as an object in some versions
   // and a single-element array in others. Accept either.
-  type Tagged = { id: string; name: string; member_id: string | null }
+  type Tagged = {
+    id: string
+    name: string
+    member_id: string | null
+    profile_id: string | null
+  }
   type TagRow = { media_id: string; people: Tagged | Tagged[] | null }
   for (const row of (tags.data ?? []) as unknown as TagRow[]) {
     const tagged = Array.isArray(row.people) ? row.people : row.people ? [row.people] : []
@@ -488,6 +500,7 @@ export async function hydrate(db: DB, rows: MediaRow[]): Promise<MediaView[]> {
         // A member's chosen display name wins over the tag's stored text.
         name: member?.display_name ?? p.name,
         member_id: p.member_id,
+        profile_id: p.profile_id,
         avatar_url: member?.avatar_url ?? null,
       }
     })

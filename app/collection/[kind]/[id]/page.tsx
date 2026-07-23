@@ -41,7 +41,11 @@ export default async function CollectionPage({
     subtitle = data.event_date ? fullDate(data.event_date) : null
     query = `event=${id}`
   } else if (kind === 'person') {
-    const { data } = await db.from('people').select('name, member_id, profile_id').eq('id', id).maybeSingle()
+    const { data } = await db
+      .from('people')
+      .select('name, member_id, profile_id')
+      .eq('id', id)
+      .maybeSingle()
     if (!data) notFound()
     title = data.name
     person = data
@@ -53,22 +57,22 @@ export default async function CollectionPage({
     query = `year=${year}`
   }
 
-  // A family member can have both a newer passcode identity and an older email
-  // profile. Resolve either missing side by exact display name so the "Added
-  // by" shelf includes historical and current uploads without rewriting tags.
+  // Older tags may predate explicit identity links. Use a display-name bridge
+  // only when it resolves to exactly one account; ambiguity is left unlinked
+  // rather than attributing uploads to the wrong relative.
   if (kind === 'person' && person && (!person.member_id || !person.profile_id)) {
     const [{ data: members }, { data: profiles }] = await Promise.all([
       person.member_id
         ? Promise.resolve({ data: [] })
-        : db.from('members').select('id').ilike('display_name', person.name).limit(1),
+        : db.from('members').select('id').ilike('display_name', person.name).limit(2),
       person.profile_id
         ? Promise.resolve({ data: [] })
-        : db.from('profiles').select('id').ilike('display_name', person.name).limit(1),
+        : db.from('profiles').select('id').ilike('display_name', person.name).limit(2),
     ])
     person = {
       ...person,
-      member_id: person.member_id ?? members?.[0]?.id ?? null,
-      profile_id: person.profile_id ?? profiles?.[0]?.id ?? null,
+      member_id: person.member_id ?? (members?.length === 1 ? members[0].id : null),
+      profile_id: person.profile_id ?? (profiles?.length === 1 ? profiles[0].id : null),
     }
   }
 
@@ -115,12 +119,16 @@ export default async function CollectionPage({
         <div className="flex flex-col gap-12">
           {media.length > 0 && (
             <Rail title={`Featuring ${title}`}>
-              {media.map((item) => <MediaTile key={item.id} media={item} />)}
+              {media.map((item) => (
+                <MediaTile key={item.id} media={item} />
+              ))}
             </Rail>
           )}
           {addedBy.length > 0 && (
             <Rail title={`Added by ${title}`}>
-              {addedBy.map((item) => <MediaTile key={item.id} media={item} />)}
+              {addedBy.map((item) => (
+                <MediaTile key={item.id} media={item} />
+              ))}
             </Rail>
           )}
           {media.length === 0 && addedBy.length === 0 && (

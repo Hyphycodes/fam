@@ -90,9 +90,19 @@ for (const file of files) {
 console.log('\nSchema behaviour')
 
 const expectedTables = [
-  'profiles', 'allowed_emails', 'events', 'media', 'reactions', 'comments',
-  'voice_notes', 'people', 'media_people', 'event_upload_links', 'music_tracks',
-  'members', 'member_sessions',
+  'profiles',
+  'allowed_emails',
+  'events',
+  'media',
+  'reactions',
+  'comments',
+  'voice_notes',
+  'people',
+  'media_people',
+  'event_upload_links',
+  'music_tracks',
+  'members',
+  'member_sessions',
 ]
 const { rows: tables } = await db.query(
   `select table_name from information_schema.tables where table_schema = 'public'`,
@@ -141,7 +151,9 @@ if (gen[0].taken_month === 7 && gen[0].taken_day === 4 && gen[0].taken_year === 
   fail(`Generated columns wrong: ${JSON.stringify(gen[0])}`)
 }
 
-const { rows: otd } = await db.query(`select count(*)::int as n from public.on_this_day('2024-07-04')`)
+const { rows: otd } = await db.query(
+  `select count(*)::int as n from public.on_this_day('2024-07-04')`,
+)
 if (otd[0].n === 1) pass('on_this_day() finds the 4th of July memory')
 else fail(`on_this_day() returned ${otd[0].n} rows, expected 1`)
 
@@ -174,7 +186,11 @@ await db.exec(`insert into auth.users (email) values ('Cousin@Example.com')`)
 const { rows: invited } = await db.query(
   `select display_name, role from public.profiles where email = 'cousin@example.com'`,
 )
-if (invited.length === 1 && invited[0].display_name === 'Cousin Ray' && invited[0].role === 'family') {
+if (
+  invited.length === 1 &&
+  invited[0].display_name === 'Cousin Ray' &&
+  invited[0].role === 'family'
+) {
   pass('Invited signup auto-creates the profile (case-insensitively)')
 } else {
   fail(`Profile not created from invite: ${JSON.stringify(invited)}`)
@@ -189,12 +205,14 @@ else fail('claimed_at was not stamped')
 // is_family()/is_owner() drive every policy in the file.
 await db.exec(`set test.uid = '11111111-1111-1111-1111-111111111111'`)
 const { rows: asOwner } = await db.query(`select public.is_family() f, public.is_owner() o`)
-if (asOwner[0].f === true && asOwner[0].o === true) pass('is_family()/is_owner() true for the owner')
+if (asOwner[0].f === true && asOwner[0].o === true)
+  pass('is_family()/is_owner() true for the owner')
 else fail(`Owner check wrong: ${JSON.stringify(asOwner[0])}`)
 
 await db.exec(`set test.uid = '99999999-9999-9999-9999-999999999999'`)
 const { rows: asStranger } = await db.query(`select public.is_family() f, public.is_owner() o`)
-if (asStranger[0].f === false && asStranger[0].o === false) pass('is_family()/is_owner() false for a stranger')
+if (asStranger[0].f === false && asStranger[0].o === false)
+  pass('is_family()/is_owner() false for a stranger')
 else fail(`Stranger check wrong: ${JSON.stringify(asStranger[0])}`)
 
 // ---------------------------------------------------------------------------
@@ -291,6 +309,24 @@ await db.exec(`delete from public.media_people
 const { rows: tags } = await db.query(`select count(*)::int n from public.media_people`)
 if (tags[0].n === 0) pass('Tags can actually be removed')
 else fail('media_people DELETE is a silent no-op — re-tagging will break')
+
+const { rows: versions } = await db.query(`select public.reel_schema_version() as version`)
+if (versions[0].version === 8) pass('Production readiness can identify schema version 8')
+else fail(`Unexpected schema version: ${versions[0].version}`)
+
+await db.exec(`
+  insert into public.members (id, first_name, last_initial, display_name) values
+    ('44444444-4444-4444-4444-444444444444', 'Alex', 'R', 'Alex'),
+    ('55555555-5555-5555-5555-555555555555', 'Alex', 'M', 'Alex');
+  insert into public.people (id, name, member_id) values
+    ('66666666-6666-6666-6666-666666666666', 'Alex', '44444444-4444-4444-4444-444444444444'),
+    ('77777777-7777-7777-7777-777777777777', 'Alex', '55555555-5555-5555-5555-555555555555');
+`)
+const { rows: sameNames } = await db.query(
+  `select count(*)::int n from public.people where name = 'Alex'`,
+)
+if (sameNames[0].n === 2) pass('Two relatives with the same name keep separate identities')
+else fail('Person tags still collapse relatives who share a display name')
 
 await db.close()
 

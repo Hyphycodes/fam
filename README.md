@@ -18,13 +18,13 @@ The name is a placeholder. Change `NEXT_PUBLIC_APP_NAME` and it's yours.
 
 ## How it's built
 
-| | |
-| --- | --- |
-| App | Next.js 16 (App Router) + TypeScript, on Vercel |
-| Auth + metadata | Supabase — passwordless magic links, Postgres, Row Level Security |
-| Video | Cloudflare Stream |
-| Photos, originals, voice notes, music | Cloudflare R2 (private bucket, signed links) |
-| Styling | Tailwind v4, CSS-first theme |
+|                                       |                                                                   |
+| ------------------------------------- | ----------------------------------------------------------------- |
+| App                                   | Next.js 16 (App Router) + TypeScript, on Vercel                   |
+| Auth + metadata                       | Supabase — passwordless magic links, Postgres, Row Level Security |
+| Video                                 | Cloudflare Stream                                                 |
+| Photos, originals, voice notes, music | Cloudflare R2 (private bucket, signed links)                      |
+| Styling                               | Tailwind v4, CSS-first theme                                      |
 
 ### The one rule that matters
 
@@ -81,7 +81,7 @@ scripts/                       schema check, icons, signing key, R2 CORS
   connection, presigned PUTs for photos.
 - **[`lib/client/media-prep.ts`](lib/client/media-prep.ts)** — HEIC decoding
   (native on iOS, JS decoder only as a fallback), display/thumb derivation, and
-  a small EXIF reader so "4 years ago today" uses the day it was *taken*.
+  a small EXIF reader so "4 years ago today" uses the day it was _taken_.
 - **[`lib/client/reel.ts`](lib/client/reel.ts)** — the edit: how long each thing
   holds, where a title card earns its place. Every number that makes Movie Mode
   feel like a film instead of a slideshow is in that one file.
@@ -98,6 +98,8 @@ npm run dev              # http://localhost:3000
 npm run build
 npm run typecheck
 npm run lint
+npm test
+npm run format -- path/to/file.ts
 npm run check:sql        # apply migrations to a real Postgres and assert behaviour
 npm run stream:signing-key   # turn on private video playback
 npm run r2:cors          # the CORS rule browser uploads need
@@ -108,6 +110,6 @@ npm run r2:cors          # the CORS rule browser uploads need
 ## What this deliberately isn't (yet)
 
 No AI clip selection, no face recognition, no search-for-anything, no calendar
-or family tree or recipes. All real, all later. Keeping v1 to *upload → feed →
-play → Movie Mode → the human layer* is the reason it ships and gets used —
+or family tree or recipes. All real, all later. Keeping v1 to _upload → feed →
+play → Movie Mode → the human layer_ is the reason it ships and gets used —
 which, with family, is the whole game.

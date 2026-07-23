@@ -27,7 +27,12 @@ export function MemoryEditor({
   const [caption, setCaption] = useState(media.caption ?? '')
   const [eventId, setEventId] = useState(media.event_id ?? '')
   const [people, setPeople] = useState<TagChip[]>(
-    media.people.map((p) => ({ name: p.name, memberId: p.member_id, avatarUrl: p.avatar_url })),
+    media.people.map((p) => ({
+      name: p.name,
+      memberId: p.member_id,
+      profileId: p.profile_id,
+      avatarUrl: p.avatar_url,
+    })),
   )
   const [favorite, setFavorite] = useState(media.favorite)
   const [takenAt, setTakenAt] = useState(media.taken_at.slice(0, 10))
@@ -50,7 +55,11 @@ export function MemoryEditor({
           favorite,
           takenAt: takenAt ? new Date(`${takenAt}T12:00:00`).toISOString() : undefined,
           location,
-          people: people.map((p) => p.name),
+          people: people.map((person) => ({
+            name: person.name,
+            memberId: person.memberId,
+            profileId: person.profileId,
+          })),
         }),
       })
       const payload = await response.json().catch(() => ({}))
@@ -86,9 +95,7 @@ export function MemoryEditor({
     } catch (favoriteError) {
       setFavorite(!next)
       setError(
-        favoriteError instanceof Error
-          ? favoriteError.message
-          : 'Could not update the favorite.',
+        favoriteError instanceof Error ? favoriteError.message : 'Could not update the favorite.',
       )
     }
   }
@@ -145,11 +152,21 @@ export function MemoryEditor({
           <div className="grid grid-cols-2 gap-3">
             <label className="text-xs tracking-[0.2em] text-paper-faint uppercase">
               Date
-              <input type="date" value={takenAt} onChange={(event) => setTakenAt(event.target.value)} className="field mt-2 tracking-normal normal-case" />
+              <input
+                type="date"
+                value={takenAt}
+                onChange={(event) => setTakenAt(event.target.value)}
+                className="field mt-2 tracking-normal normal-case"
+              />
             </label>
             <label className="text-xs tracking-[0.2em] text-paper-faint uppercase">
               Location
-              <input value={location} onChange={(event) => setLocation(event.target.value)} className="field mt-2 tracking-normal normal-case" placeholder="Optional" />
+              <input
+                value={location}
+                onChange={(event) => setLocation(event.target.value)}
+                className="field mt-2 tracking-normal normal-case"
+                placeholder="Optional"
+              />
             </label>
           </div>
 
@@ -184,10 +201,18 @@ export function MemoryEditor({
               </button>
             )}
           </div>
-          {error && <p role="alert" className="text-sm text-paper-soft">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-paper-soft">
+              {error}
+            </p>
+          )}
         </div>
       )}
-      {!open && error && <p role="alert" className="mt-3 text-sm text-paper-soft">{error}</p>}
+      {!open && error && (
+        <p role="alert" className="mt-3 text-sm text-paper-soft">
+          {error}
+        </p>
+      )}
     </section>
   )
 }

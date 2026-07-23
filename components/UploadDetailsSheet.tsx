@@ -4,7 +4,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { EventPicker } from '@/components/EventPicker'
 import { PersonTagPicker, type TagChip } from '@/components/PersonTagPicker'
 import { PhotoCropEditor } from '@/components/PhotoCropEditor'
-import { classify, isSupportedMedia, type Kind } from '@/lib/client/media-prep'
+import {
+  classify,
+  createBrowserPhotoPreview,
+  isHeic,
+  isSupportedMedia,
+  type Kind,
+} from '@/lib/client/media-prep'
 import type { UploadContext, UploadDraft, UploadDetails } from '@/lib/client/uploader'
 import type { CropMetadata, EventRow } from '@/lib/types'
 
@@ -12,10 +18,14 @@ interface DraftItem extends UploadDraft {
   id: string
   kind: Kind
   previewUrl: string
+  previewReady: boolean
+  previewError?: boolean
+  videoPosterUrl?: string
   selected: boolean
 }
 
 type Filter = 'all' | Kind
+const REVIEW_PAGE_SIZE = 60
 
 export function UploadDetailsSheet({
   initialFiles,
@@ -44,6 +54,7 @@ export function UploadDetailsSheet({
   const [creatingAlbum, setCreatingAlbum] = useState(false)
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [cropId, setCropId] = useState<string | null>(null)
+  const [reviewPage, setReviewPage] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [duplicateCount, setDuplicateCount] = useState(0)
   const [unsupportedCount, setUnsupportedCount] = useState(
@@ -56,6 +67,9 @@ export function UploadDetailsSheet({
   const hashingCancelled = useRef(false)
   const latestItems = useRef(items)
   const durationRequests = useRef(new Set<string>())
+  const durationActive = useRef(0)
+  const previewRequests = useRef(new Set<string>())
+  const previewActive = useRef(0)
 
   useEffect(() => {
     latestItems.current = items
@@ -86,30 +100,90 @@ export function UploadDetailsSheet({
   }, [anonymous])
 
   useEffect(() => {
-    for (const item of items) {
-      if (
-        item.kind !== 'video' ||
-        item.durationSeconds !== undefined ||
-        durationRequests.current.has(item.id)
-      ) continue
+    const capacity = Math.max(0, 1 - durationActive.current)
+    const pending = items
+      .filter(
+        (item) =>
+          item.kind === 'video' &&
+          item.durationSeconds === undefined &&
+          !durationRequests.current.has(item.id),
+      )
+      .slice(0, capacity)
+
+    for (const item of pending) {
       durationRequests.current.add(item.id)
-      void readVideoDuration(item.previewUrl).then((durationSeconds) => {
-        setItems((current) =>
-          current.map((entry) => entry.id === item.id ? { ...entry, durationSeconds } : entry),
-        )
-      })
+      durationActive.current += 1
+      void readVideoPreview(item.previewUrl)
+        .then(({ durationSeconds, posterUrl }) => {
+          if (!latestItems.current.some((entry) => entry.id === item.id)) {
+            if (posterUrl) URL.revokeObjectURL(posterUrl)
+            return
+          }
+          setItems((current) =>
+            current.map((entry) =>
+              entry.id === item.id
+                ? { ...entry, durationSeconds, videoPosterUrl: posterUrl }
+                : entry,
+            ),
+          )
+        })
+        .finally(() => {
+          durationActive.current -= 1
+        })
     }
   }, [items])
 
-  useEffect(() => () => {
-    if (submitted.current) return
-    for (const item of latestItems.current) URL.revokeObjectURL(item.previewUrl)
-  }, [])
+  useEffect(() => {
+    if (previewActive.current >= 1) return
+    const item = items.find(
+      (entry) =>
+        entry.kind === 'photo' && !entry.previewReady && !previewRequests.current.has(entry.id),
+    )
+    if (!item) return
+
+    previewRequests.current.add(item.id)
+    previewActive.current += 1
+    void createBrowserPhotoPreview(item.file)
+      .then((previewUrl) => {
+        if (!latestItems.current.some((entry) => entry.id === item.id)) {
+          URL.revokeObjectURL(previewUrl)
+          return
+        }
+        setItems((current) =>
+          current.map((entry) =>
+            entry.id === item.id ? { ...entry, previewUrl, previewReady: true } : entry,
+          ),
+        )
+        URL.revokeObjectURL(item.previewUrl)
+      })
+      .catch(() => {
+        setItems((current) =>
+          current.map((entry) => (entry.id === item.id ? { ...entry, previewError: true } : entry)),
+        )
+      })
+      .finally(() => {
+        previewActive.current -= 1
+      })
+  }, [items])
+
+  useEffect(
+    () => () => {
+      if (submitted.current) return
+      for (const item of latestItems.current) {
+        URL.revokeObjectURL(item.previewUrl)
+        if (item.videoPosterUrl) URL.revokeObjectURL(item.videoPosterUrl)
+      }
+    },
+    [],
+  )
 
   const visible = useMemo(
     () => items.filter((item) => filter === 'all' || item.kind === filter),
     [filter, items],
   )
+  const pageCount = Math.max(1, Math.ceil(visible.length / REVIEW_PAGE_SIZE))
+  const safePage = Math.min(reviewPage, pageCount - 1)
+  const mounted = visible.slice(safePage * REVIEW_PAGE_SIZE, (safePage + 1) * REVIEW_PAGE_SIZE)
   const selected = items.filter((item) => item.selected)
   const selectedBytes = selected.reduce((sum, item) => sum + item.file.size, 0)
   const photos = items.filter((item) => item.kind === 'photo').length
@@ -142,13 +216,19 @@ export function UploadDetailsSheet({
   }
 
   function close() {
-    for (const item of items) URL.revokeObjectURL(item.previewUrl)
+    for (const item of items) {
+      URL.revokeObjectURL(item.previewUrl)
+      if (item.videoPosterUrl) URL.revokeObjectURL(item.videoPosterUrl)
+    }
     onCancel()
   }
 
   function removeSelected() {
     const ids = new Set(selected.map((item) => item.id))
-    for (const item of selected) URL.revokeObjectURL(item.previewUrl)
+    for (const item of selected) {
+      URL.revokeObjectURL(item.previewUrl)
+      if (item.videoPosterUrl) URL.revokeObjectURL(item.videoPosterUrl)
+    }
     if (previewId && ids.has(previewId)) setPreviewId(null)
     if (cropId && ids.has(cropId)) setCropId(null)
     setItems((current) => current.filter((item) => !ids.has(item.id)))
@@ -199,16 +279,29 @@ export function UploadDetailsSheet({
 
       const details: UploadDetails = {
         caption: caption.trim() || undefined,
-        people: people.length ? people.map((person) => ({ name: person.name })) : undefined,
+        people: people.length
+          ? people.map((person) => ({
+              name: person.name,
+              memberId: person.memberId,
+              profileId: person.profileId,
+            }))
+          : undefined,
         eventId: eventId || null,
         takenAt: date ? new Date(`${date}T12:00:00`).toISOString() : undefined,
         location: location.trim() || undefined,
       }
       submitted.current = true
       for (const item of items) {
-        if (!item.selected) URL.revokeObjectURL(item.previewUrl)
+        if (item.videoPosterUrl) URL.revokeObjectURL(item.videoPosterUrl)
+        if (!item.selected) {
+          URL.revokeObjectURL(item.previewUrl)
+        }
       }
-      onConfirm(drafts, { ...(context ?? {}), eventId: eventId || context?.eventId || null, details })
+      onConfirm(drafts, {
+        ...(context ?? {}),
+        eventId: eventId || context?.eventId || null,
+        details,
+      })
     } catch (hashError) {
       if (!(hashError instanceof DOMException && hashError.name === 'AbortError')) {
         setError(hashError instanceof Error ? hashError.message : 'Could not prepare this batch.')
@@ -250,15 +343,26 @@ export function UploadDetailsSheet({
           <div>
             <h1 className="text-xl font-semibold tracking-[-0.02em] sm:text-2xl">Review items</h1>
             <p className="mt-0.5 text-xs text-paper-faint">
-              {items.length} items · {formatBytes(items.reduce((sum, item) => sum + item.file.size, 0))}
+              {items.length} items ·{' '}
+              {formatBytes(items.reduce((sum, item) => sum + item.file.size, 0))}
             </p>
           </div>
-          <button type="button" onClick={close} autoFocus className="text-sm text-paper-dim hover:text-paper">Cancel</button>
+          <button
+            type="button"
+            onClick={close}
+            autoFocus
+            className="text-sm text-paper-dim hover:text-paper"
+          >
+            Cancel
+          </button>
         </header>
 
         <div
           className={`mt-5 rounded-lg border border-dashed p-4 transition-colors ${dragging ? 'border-white bg-white/5' : 'border-edge-strong'}`}
-          onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
+          onDragEnter={(event) => {
+            event.preventDefault()
+            setDragging(true)
+          }}
           onDragOver={(event) => event.preventDefault()}
           onDragLeave={() => setDragging(false)}
           onDrop={(event) => {
@@ -268,17 +372,28 @@ export function UploadDetailsSheet({
           }}
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-paper-dim">Drop photos and videos here, or add more from your device.</p>
-            <button type="button" onClick={() => addInput.current?.click()} className="btn btn-ghost px-4 py-2 text-sm">Add more</button>
+            <p className="text-sm text-paper-dim">
+              Drop photos and videos here, or add more from your device.
+            </p>
+            <button
+              type="button"
+              onClick={() => addInput.current?.click()}
+              className="btn btn-ghost px-4 py-2 text-sm"
+            >
+              Add more
+            </button>
           </div>
         </div>
 
         {duplicateCount > 0 && (
-          <p className="mt-3 text-xs text-paper-dim">{duplicateCount} repeated {duplicateCount === 1 ? 'file was' : 'files were'} skipped.</p>
+          <p className="mt-3 text-xs text-paper-dim">
+            {duplicateCount} repeated {duplicateCount === 1 ? 'file was' : 'files were'} skipped.
+          </p>
         )}
         {unsupportedCount > 0 && (
           <p className="mt-2 text-xs text-paper-dim">
-            {unsupportedCount} unsupported {unsupportedCount === 1 ? 'file was' : 'files were'} skipped.
+            {unsupportedCount} unsupported {unsupportedCount === 1 ? 'file was' : 'files were'}{' '}
+            skipped.
           </p>
         )}
 
@@ -288,22 +403,45 @@ export function UploadDetailsSheet({
               <button
                 key={value}
                 type="button"
-                onClick={() => setFilter(value)}
+                onClick={() => {
+                  setFilter(value)
+                  setReviewPage(0)
+                }}
                 className={`rounded-md px-3 py-2 text-xs ${filter === value ? 'bg-white text-black' : 'text-paper-dim hover:text-paper'}`}
               >
-                {value === 'all' ? `All ${items.length}` : value === 'photo' ? `Photos ${photos}` : `Videos ${videos}`}
+                {value === 'all'
+                  ? `All ${items.length}`
+                  : value === 'photo'
+                    ? `Photos ${photos}`
+                    : `Videos ${videos}`}
               </button>
             ))}
           </div>
           <div className="flex items-center gap-4 text-xs text-paper-dim">
-            <button type="button" onClick={() => {
-              const ids = new Set(visible.map((item) => item.id))
-              setItems((current) => current.map((item) => ids.has(item.id) ? { ...item, selected: true } : item))
-            }} className="hover:text-paper">Select all</button>
-            <button type="button" onClick={() => {
-              const ids = new Set(visible.map((item) => item.id))
-              setItems((current) => current.map((item) => ids.has(item.id) ? { ...item, selected: false } : item))
-            }} className="hover:text-paper">Deselect</button>
+            <button
+              type="button"
+              onClick={() => {
+                const ids = new Set(visible.map((item) => item.id))
+                setItems((current) =>
+                  current.map((item) => (ids.has(item.id) ? { ...item, selected: true } : item)),
+                )
+              }}
+              className="hover:text-paper"
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const ids = new Set(visible.map((item) => item.id))
+                setItems((current) =>
+                  current.map((item) => (ids.has(item.id) ? { ...item, selected: false } : item)),
+                )
+              }}
+              className="hover:text-paper"
+            >
+              Deselect
+            </button>
             <button
               type="button"
               onClick={removeSelected}
@@ -317,38 +455,97 @@ export function UploadDetailsSheet({
 
         {visible.length > 0 ? (
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
-            {visible.map((item) => (
-              <article key={item.id} className={`group overflow-hidden rounded-lg border bg-ink-raised ${item.selected ? 'border-white/50' : 'border-edge'}`}>
-                <button type="button" onClick={() => setPreviewId(item.id)} className="relative block aspect-square w-full overflow-hidden bg-black">
-                  {item.kind === 'photo' ? (
-                    <img src={item.previewUrl} alt={item.file.name} className="h-full w-full object-cover" />
+            {mounted.map((item) => (
+              <article
+                key={item.id}
+                className={`group overflow-hidden rounded-lg border bg-ink-raised ${item.selected ? 'border-white/50' : 'border-edge'}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setPreviewId(item.id)}
+                  className="relative block aspect-square w-full overflow-hidden bg-black"
+                >
+                  {item.kind === 'photo' && item.previewReady ? (
+                    <img
+                      src={item.previewUrl}
+                      alt={item.file.name}
+                      loading="lazy"
+                      decoding="async"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : item.kind === 'photo' ? (
+                    <span className="grid h-full place-items-center px-3 text-center text-xs text-paper-faint">
+                      {item.previewError ? 'Preview unavailable' : 'Preparing preview'}
+                    </span>
+                  ) : item.videoPosterUrl ? (
+                    <img
+                      src={item.videoPosterUrl}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="h-full w-full object-cover"
+                    />
                   ) : (
-                    <video src={item.previewUrl} muted preload="metadata" className="h-full w-full object-cover" />
+                    <span className="grid h-full place-items-center text-xs text-paper-faint">
+                      Video
+                    </span>
                   )}
-                  <span className="absolute top-2 left-2 rounded bg-black/70 px-1.5 py-1 text-[10px] uppercase text-white/80">{item.kind}</span>
+                  <span className="absolute top-2 left-2 rounded bg-black/70 px-1.5 py-1 text-[10px] uppercase text-white/80">
+                    {item.kind}
+                  </span>
                   {item.kind === 'video' && item.durationSeconds != null && (
-                    <span className="absolute right-2 bottom-2 rounded bg-black/70 px-1.5 py-1 text-[10px] text-white">{formatDuration(item.durationSeconds)}</span>
+                    <span className="absolute right-2 bottom-2 rounded bg-black/70 px-1.5 py-1 text-[10px] text-white">
+                      {formatDuration(item.durationSeconds)}
+                    </span>
                   )}
                 </button>
                 <div className="p-2.5">
-                  <p className="truncate text-xs text-paper-soft" title={item.file.name}>{item.file.name}</p>
-                  <p className="mt-0.5 text-[10px] text-paper-faint">{formatBytes(item.file.size)}</p>
+                  <p className="truncate text-xs text-paper-soft" title={item.file.name}>
+                    {item.file.name}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-paper-faint">
+                    {formatBytes(item.file.size)}
+                  </p>
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <label className="flex items-center gap-1.5 text-[11px] text-paper-dim">
                       <input
                         type="checkbox"
                         checked={item.selected}
-                        onChange={(event) => setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, selected: event.target.checked } : entry))}
+                        onChange={(event) =>
+                          setItems((current) =>
+                            current.map((entry) =>
+                              entry.id === item.id
+                                ? { ...entry, selected: event.target.checked }
+                                : entry,
+                            ),
+                          )
+                        }
                         className="accent-white"
                       />
                       Include
                     </label>
                     <div className="flex gap-2 text-[11px]">
-                      {item.kind === 'photo' && <button type="button" onClick={() => setCropId(item.id)} className="text-paper-dim hover:text-paper">Crop</button>}
-                      <button type="button" onClick={() => {
-                        URL.revokeObjectURL(item.previewUrl)
-                        setItems((current) => current.filter((entry) => entry.id !== item.id))
-                      }} className="text-paper-faint hover:text-paper">Remove</button>
+                      {item.kind === 'photo' && (
+                        <button
+                          type="button"
+                          onClick={() => setCropId(item.id)}
+                          disabled={!item.previewReady}
+                          className="text-paper-dim hover:text-paper disabled:pointer-events-none disabled:opacity-40"
+                        >
+                          Crop
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          URL.revokeObjectURL(item.previewUrl)
+                          if (item.videoPosterUrl) URL.revokeObjectURL(item.videoPosterUrl)
+                          setItems((current) => current.filter((entry) => entry.id !== item.id))
+                        }}
+                        className="text-paper-faint hover:text-paper"
+                      >
+                        Remove
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -356,7 +553,32 @@ export function UploadDetailsSheet({
             ))}
           </div>
         ) : (
-          <p className="mt-8 py-10 text-center text-sm text-paper-faint">No items match this filter.</p>
+          <p className="mt-8 py-10 text-center text-sm text-paper-faint">
+            No items match this filter.
+          </p>
+        )}
+        {visible.length > REVIEW_PAGE_SIZE && (
+          <div className="mt-5 flex items-center justify-center gap-4">
+            <button
+              type="button"
+              onClick={() => setReviewPage((current) => Math.max(0, current - 1))}
+              disabled={safePage === 0}
+              className="btn btn-ghost disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-xs text-paper-faint">
+              {safePage + 1} of {pageCount}
+            </span>
+            <button
+              type="button"
+              onClick={() => setReviewPage((current) => Math.min(pageCount - 1, current + 1))}
+              disabled={safePage >= pageCount - 1}
+              className="btn btn-ghost disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
         )}
 
         {!anonymous && items.length > 0 && (
@@ -366,32 +588,95 @@ export function UploadDetailsSheet({
               <p className="mt-1 text-xs text-paper-faint">Every field is optional.</p>
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
-              <label className="block text-xs text-paper-faint">Caption<textarea rows={2} value={caption} onChange={(event) => setCaption(event.target.value)} className="field mt-1.5 resize-none" placeholder="Add a caption" /></label>
-              <div><span className="text-xs text-paper-faint">Tagged people</span><div className="mt-1.5"><PersonTagPicker value={people} onChange={setPeople} placeholder="Search or add a name" /></div></div>
+              <label className="block text-xs text-paper-faint">
+                Caption
+                <textarea
+                  rows={2}
+                  value={caption}
+                  onChange={(event) => setCaption(event.target.value)}
+                  className="field mt-1.5 resize-none"
+                  placeholder="Add a caption"
+                />
+              </label>
+              <div>
+                <span className="text-xs text-paper-faint">Tagged people</span>
+                <div className="mt-1.5">
+                  <PersonTagPicker
+                    value={people}
+                    onChange={setPeople}
+                    placeholder="Search or add a name"
+                  />
+                </div>
+              </div>
               <div>
                 <span className="text-xs text-paper-faint">Album or event</span>
-                <div className="mt-1.5"><EventPicker events={events} value={eventId} onChange={setEventId} /></div>
+                <div className="mt-1.5">
+                  <EventPicker events={events} value={eventId} onChange={setEventId} />
+                </div>
                 <div className="mt-2 flex gap-2">
-                  <input value={newAlbum} onChange={(event) => setNewAlbum(event.target.value)} placeholder="New album name" className="field py-2 text-sm" />
-                  <button type="button" onClick={() => void createAlbum()} disabled={creatingAlbum || !newAlbum.trim()} className="btn btn-ghost shrink-0 px-3 py-2 text-sm">{creatingAlbum ? 'Creating…' : 'Create'}</button>
+                  <input
+                    value={newAlbum}
+                    onChange={(event) => setNewAlbum(event.target.value)}
+                    placeholder="New album name"
+                    className="field py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void createAlbum()}
+                    disabled={creatingAlbum || !newAlbum.trim()}
+                    className="btn btn-ghost shrink-0 px-3 py-2 text-sm"
+                  >
+                    {creatingAlbum ? 'Creating…' : 'Create'}
+                  </button>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <label className="text-xs text-paper-faint">Date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="field mt-1.5" /></label>
-                <label className="text-xs text-paper-faint">Location<input value={location} onChange={(event) => setLocation(event.target.value)} className="field mt-1.5" placeholder="Optional" /></label>
+                <label className="text-xs text-paper-faint">
+                  Date
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(event) => setDate(event.target.value)}
+                    className="field mt-1.5"
+                  />
+                </label>
+                <label className="text-xs text-paper-faint">
+                  Location
+                  <input
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                    className="field mt-1.5"
+                    placeholder="Optional"
+                  />
+                </label>
               </div>
             </div>
           </section>
         )}
 
-        {error && <p role="alert" className="mt-4 text-sm text-paper-soft">{error}</p>}
+        {error && (
+          <p role="alert" className="mt-4 text-sm text-paper-soft">
+            {error}
+          </p>
+        )}
 
         <footer className="sticky bottom-0 z-20 -mx-4 mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-edge bg-ink/95 px-4 py-4 backdrop-blur-xl sm:-mx-6 sm:px-6">
-          <p className="text-xs text-paper-dim">{selected.length} selected · {formatBytes(selectedBytes)}</p>
+          <p className="text-xs text-paper-dim">
+            {selected.length} selected · {formatBytes(selectedBytes)}
+          </p>
           <div className="flex gap-2">
-            <button type="button" onClick={close} className="btn btn-ghost">Cancel</button>
-            <button type="button" disabled={selected.length === 0 || Boolean(hashing)} onClick={() => void submit()} className="btn btn-primary min-w-36">
-              {hashing ? `Checking ${hashing.done}/${hashing.total}` : `Add ${selected.length} ${selected.length === 1 ? 'Item' : 'Items'}`}
+            <button type="button" onClick={close} className="btn btn-ghost">
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={selected.length === 0 || Boolean(hashing)}
+              onClick={() => void submit()}
+              className="btn btn-primary min-w-36"
+            >
+              {hashing
+                ? `Checking ${hashing.done}/${hashing.total}`
+                : `Add ${selected.length} ${selected.length === 1 ? 'Item' : 'Items'}`}
             </button>
           </div>
         </footer>
@@ -415,8 +700,25 @@ export function UploadDetailsSheet({
             }
           }}
         >
-          <button type="button" onClick={() => setPreviewId(null)} autoFocus className="absolute top-5 right-5 text-sm text-white/70 hover:text-white">Close</button>
-          {preview.kind === 'photo' ? <img src={preview.previewUrl} alt={preview.file.name} className="max-h-[85vh] max-w-full object-contain" /> : <video src={preview.previewUrl} controls autoPlay className="max-h-[85vh] max-w-full" />}
+          <button
+            type="button"
+            onClick={() => setPreviewId(null)}
+            autoFocus
+            className="absolute top-5 right-5 text-sm text-white/70 hover:text-white"
+          >
+            Close
+          </button>
+          {preview.kind === 'photo' && preview.previewReady ? (
+            <img
+              src={preview.previewUrl}
+              alt={preview.file.name}
+              className="max-h-[85vh] max-w-full object-contain"
+            />
+          ) : preview.kind === 'photo' ? (
+            <p className="text-sm text-paper-dim">Preparing this preview…</p>
+          ) : (
+            <video src={preview.previewUrl} controls autoPlay className="max-h-[85vh] max-w-full" />
+          )}
         </div>
       )}
 
@@ -427,19 +729,30 @@ export function UploadDetailsSheet({
           initial={cropping.crop as CropMetadata | null}
           onCancel={() => setCropId(null)}
           onSave={(crop) => {
-            setItems((current) => current.map((item) => item.id === cropping.id ? { ...item, crop } : item))
+            setItems((current) =>
+              current.map((item) => (item.id === cropping.id ? { ...item, crop } : item)),
+            )
             setCropId(null)
           }}
         />
       )}
 
       {hashing && (
-        <div className="fixed inset-0 z-[110] grid place-items-center bg-black/75 px-6 backdrop-blur-sm" role="status" aria-live="polite">
+        <div
+          className="fixed inset-0 z-[110] grid place-items-center bg-black/75 px-6 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+        >
           <div className="w-full max-w-sm rounded-xl border border-edge bg-ink-raised p-6 text-center">
             <p className="text-lg font-semibold">Checking for duplicates</p>
-            <p className="mt-2 text-sm text-paper-dim">{hashing.done} of {hashing.total} items</p>
+            <p className="mt-2 text-sm text-paper-dim">
+              {hashing.done} of {hashing.total} items
+            </p>
             <div className="mt-4 h-1 overflow-hidden rounded-full bg-edge">
-              <div className="h-full bg-white transition-[width]" style={{ width: `${Math.max(3, hashing.done / hashing.total * 100)}%` }} />
+              <div
+                className="h-full bg-white transition-[width]"
+                style={{ width: `${Math.max(3, (hashing.done / hashing.total) * 100)}%` }}
+              />
             </div>
             <button
               type="button"
@@ -463,6 +776,7 @@ function makeDrafts(files: File[]): DraftItem[] {
     file,
     kind: classify(file),
     previewUrl: URL.createObjectURL(file),
+    previewReady: !isHeic(file),
     selected: true,
   }))
 }
@@ -492,17 +806,63 @@ async function hashFile(file: File, isCancelled: () => boolean): Promise<string>
   }
 }
 
-function readVideoDuration(url: string): Promise<number | null> {
+function readVideoPreview(
+  url: string,
+): Promise<{ durationSeconds: number | null; posterUrl?: string }> {
   return new Promise((resolve) => {
     const video = document.createElement('video')
     video.preload = 'metadata'
-    const finish = (duration: number | null) => {
+    video.muted = true
+    video.playsInline = true
+    let settled = false
+    const finish = (durationSeconds: number | null, posterUrl?: string) => {
+      if (settled) return
+      settled = true
       video.removeAttribute('src')
       video.load()
-      resolve(duration)
+      resolve({ durationSeconds, posterUrl })
     }
-    video.onloadedmetadata = () => finish(Number.isFinite(video.duration) ? video.duration : null)
-    video.onerror = () => finish(null)
+    const timeout = window.setTimeout(() => finish(null), 15_000)
+    const capture = () => {
+      window.clearTimeout(timeout)
+      const durationSeconds = Number.isFinite(video.duration) ? video.duration : null
+      if (!video.videoWidth || !video.videoHeight) {
+        finish(durationSeconds)
+        return
+      }
+      const scale = Math.min(1, 480 / Math.max(video.videoWidth, video.videoHeight))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(video.videoWidth * scale))
+      canvas.height = Math.max(1, Math.round(video.videoHeight * scale))
+      const context = canvas.getContext('2d')
+      if (!context) {
+        finish(durationSeconds)
+        return
+      }
+      context.drawImage(video, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(
+        (blob) => {
+          const posterUrl = blob ? URL.createObjectURL(blob) : undefined
+          canvas.width = 1
+          canvas.height = 1
+          finish(durationSeconds, posterUrl)
+        },
+        'image/webp',
+        0.72,
+      )
+    }
+    video.onloadedmetadata = () => {
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        video.currentTime = Math.min(0.1, video.duration / 2)
+      } else {
+        capture()
+      }
+    }
+    video.onseeked = capture
+    video.onerror = () => {
+      window.clearTimeout(timeout)
+      finish(null)
+    }
     video.src = url
   })
 }
@@ -519,10 +879,7 @@ function formatDuration(seconds: number): string {
   return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, '0')}`
 }
 
-function trapFocus(
-  event: React.KeyboardEvent<HTMLElement>,
-  container: HTMLElement,
-) {
+function trapFocus(event: React.KeyboardEvent<HTMLElement>, container: HTMLElement) {
   const focusable = Array.from(
     container.querySelectorAll<HTMLElement>(
       'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',

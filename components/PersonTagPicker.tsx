@@ -7,6 +7,7 @@ import type { TagSuggestion } from '@/app/api/community/tag-suggestions/route'
 export interface TagChip {
   name: string
   memberId: string | null
+  profileId: string | null
   avatarUrl: string | null
 }
 
@@ -65,34 +66,50 @@ export function PersonTagPicker({
     return () => window.removeEventListener('pointerdown', onPointerDown)
   }, [open])
 
-  const taken = useMemo(() => new Set(value.map((v) => v.name.toLowerCase())), [value])
+  const taken = useMemo(() => new Set(value.map(tagIdentity)), [value])
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return []
-    return pool.filter((s) => !taken.has(s.name.toLowerCase()) && s.name.toLowerCase().includes(q)).slice(0, 6)
+    return pool
+      .filter(
+        (suggestion) =>
+          !taken.has(tagIdentity(suggestion)) && suggestion.name.toLowerCase().includes(q),
+      )
+      .slice(0, 6)
   }, [pool, query, taken])
 
   const exactMatch = matches.some((m) => m.name.toLowerCase() === query.trim().toLowerCase())
-  const canAddFreeText = query.trim().length > 0 && !exactMatch && !taken.has(query.trim().toLowerCase())
-  const options: (TagSuggestion | 'free-text')[] = canAddFreeText ? [...matches, 'free-text'] : matches
+  const canAddFreeText =
+    query.trim().length > 0 && !exactMatch && !taken.has(`name:${query.trim().toLowerCase()}`)
+  const options: (TagSuggestion | 'free-text')[] = canAddFreeText
+    ? [...matches, 'free-text']
+    : matches
 
   function addChip(chip: TagChip) {
-    if (taken.has(chip.name.toLowerCase())) return
+    if (taken.has(tagIdentity(chip))) return
     onChange([...value, chip])
     setQuery('')
     setHighlight(0)
     setOpen(false)
   }
 
-  function removeChip(name: string) {
-    onChange(value.filter((v) => v.name !== name))
+  function removeChip(identity: string) {
+    onChange(value.filter((chip) => tagIdentity(chip) !== identity))
   }
 
   function commitHighlighted() {
     const picked = options[highlight]
     if (!picked) return
-    if (picked === 'free-text') addChip({ name: query.trim(), memberId: null, avatarUrl: null })
-    else addChip({ name: picked.name, memberId: picked.memberId, avatarUrl: picked.avatarUrl })
+    if (picked === 'free-text') {
+      addChip({ name: query.trim(), memberId: null, profileId: null, avatarUrl: null })
+    } else {
+      addChip({
+        name: picked.name,
+        memberId: picked.memberId,
+        profileId: picked.profileId,
+        avatarUrl: picked.avatarUrl,
+      })
+    }
   }
 
   return (
@@ -100,14 +117,14 @@ export function PersonTagPicker({
       <div className="field flex flex-wrap items-center gap-1.5 py-2">
         {value.map((chip) => (
           <span
-            key={chip.name}
+            key={tagIdentity(chip)}
             className="flex items-center gap-1.5 rounded-full bg-white/10 py-1 pr-1 pl-1.5 text-sm text-paper"
           >
             <Avatar name={chip.name} src={chip.avatarUrl} size={18} />
             {chip.name}
             <button
               type="button"
-              onClick={() => removeChip(chip.name)}
+              onClick={() => removeChip(tagIdentity(chip))}
               aria-label={`Remove ${chip.name}`}
               className="grid h-4 w-4 place-items-center rounded-full text-paper-faint hover:bg-white/10 hover:text-paper"
             >
@@ -135,7 +152,7 @@ export function PersonTagPicker({
               event.preventDefault()
               if (options.length > 0) commitHighlighted()
             } else if (event.key === 'Backspace' && query === '' && value.length > 0) {
-              removeChip(value[value.length - 1].name)
+              removeChip(tagIdentity(value[value.length - 1]))
             } else if (event.key === 'Escape') {
               setOpen(false)
             }
@@ -153,7 +170,14 @@ export function PersonTagPicker({
                 <button
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => addChip({ name: query.trim(), memberId: null, avatarUrl: null })}
+                  onClick={() =>
+                    addChip({
+                      name: query.trim(),
+                      memberId: null,
+                      profileId: null,
+                      avatarUrl: null,
+                    })
+                  }
                   className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors ${
                     index === highlight ? 'bg-white/10' : 'hover:bg-white/5'
                   }`}
@@ -167,11 +191,18 @@ export function PersonTagPicker({
                 </button>
               </li>
             ) : (
-              <li key={option.name}>
+              <li key={tagIdentity(option)}>
                 <button
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => addChip({ name: option.name, memberId: option.memberId, avatarUrl: option.avatarUrl })}
+                  onClick={() =>
+                    addChip({
+                      name: option.name,
+                      memberId: option.memberId,
+                      profileId: option.profileId,
+                      avatarUrl: option.avatarUrl,
+                    })
+                  }
                   className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors ${
                     index === highlight ? 'bg-white/10' : 'hover:bg-white/5'
                   }`}
@@ -186,4 +217,10 @@ export function PersonTagPicker({
       )}
     </div>
   )
+}
+
+function tagIdentity(tag: { name: string; memberId: string | null; profileId: string | null }) {
+  if (tag.memberId) return `member:${tag.memberId}`
+  if (tag.profileId) return `profile:${tag.profileId}`
+  return `name:${tag.name.toLowerCase()}`
 }
