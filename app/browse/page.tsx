@@ -23,7 +23,7 @@ export default async function BrowsePage() {
     getEvents(db),
     getYears(db),
   ])
-  const events = allEvents.filter((event) => event.media_count > 0)
+  const events = allEvents
   const covers = await getBrowseCovers(db, { people: [], events, years })
   const recentIds = new Set(recent.map((item) => item.id))
   const favoriteItems = favorites.filter((item) => !recentIds.has(item.id))
@@ -39,19 +39,30 @@ export default async function BrowsePage() {
         <p className="mt-4 max-w-xl text-sm leading-relaxed text-paper-dim">
           Browse by person, album, year, or favorite status.
         </p>
-        {total > 0 && <p className="meta-mono mt-4">{total} {total === 1 ? 'item' : 'items'}</p>}
+        <Link href="/albums" className="btn btn-ghost mt-5">
+          Open albums &amp; organize uploads
+        </Link>
+        {total > 0 && (
+          <p className="meta-mono mt-4">
+            {total} {total === 1 ? 'item' : 'items'}
+          </p>
+        )}
       </header>
 
       <div className="flex flex-col gap-11 sm:gap-14">
         {recent.length > 0 && (
           <Rail title="Recently added">
-            {recent.map((item) => <MediaTile key={item.id} media={item} />)}
+            {recent.map((item) => (
+              <MediaTile key={item.id} media={item} />
+            ))}
           </Rail>
         )}
 
         {people.length > 0 && (
           <section aria-labelledby="browse-people">
-            <h2 id="browse-people" className="mb-3 text-lg font-semibold tracking-[-0.015em]">People</h2>
+            <h2 id="browse-people" className="mb-3 text-lg font-semibold tracking-[-0.015em]">
+              People
+            </h2>
             <div className="rail">
               {people.map((person) => (
                 <Link
@@ -62,7 +73,9 @@ export default async function BrowsePage() {
                   <Avatar name={person.name} src={null} size={38} />
                   <span className="min-w-0">
                     <span className="block truncate text-sm text-paper-soft">{person.name}</span>
-                    <span className="meta-mono mt-0.5 block">{person.media_count} {person.media_count === 1 ? 'item' : 'items'}</span>
+                    <span className="meta-mono mt-0.5 block">
+                      {person.media_count} {person.media_count === 1 ? 'item' : 'items'}
+                    </span>
                   </span>
                 </Link>
               ))}
@@ -71,13 +84,15 @@ export default async function BrowsePage() {
         )}
 
         {events.length > 0 && (
-          <Rail title="Albums and events">
+          <Rail title="Albums and events" href="/albums">
             {events.map((event) => (
               <CoverTile
                 key={event.id}
                 href={`/collection/event/${event.id}`}
                 label={event.name}
-                sublabel={event.event_date ? fullDate(event.event_date) : `${event.media_count} items`}
+                sublabel={
+                  event.event_date ? fullDate(event.event_date) : `${event.media_count} items`
+                }
                 cover={covers.events.get(event.id)}
               />
             ))}
@@ -100,7 +115,9 @@ export default async function BrowsePage() {
 
         {favoriteItems.length > 0 && (
           <Rail title="Favorites">
-            {favoriteItems.map((item) => <MediaTile key={item.id} media={item} />)}
+            {favoriteItems.map((item) => (
+              <MediaTile key={item.id} media={item} />
+            ))}
           </Rail>
         )}
       </div>

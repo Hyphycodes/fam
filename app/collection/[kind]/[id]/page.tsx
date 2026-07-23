@@ -31,14 +31,20 @@ export default async function CollectionPage({
 
   let title = ''
   let subtitle: string | null = null
+  let collectionKind: 'album' | 'event' | null = null
   let query = ''
   let person: { name: string; member_id: string | null; profile_id: string | null } | null = null
 
   if (kind === 'event') {
-    const { data } = await db.from('events').select('name, event_date').eq('id', id).maybeSingle()
+    const { data } = await db
+      .from('events')
+      .select('name, event_date, kind')
+      .eq('id', id)
+      .maybeSingle()
     if (!data) notFound()
     title = data.name
     subtitle = data.event_date ? fullDate(data.event_date) : null
+    collectionKind = data.kind
     query = `event=${id}`
   } else if (kind === 'person') {
     const { data } = await db
@@ -103,12 +109,18 @@ export default async function CollectionPage({
   return (
     <Shell viewer={viewer}>
       <header className="mt-6 mb-14">
-        <Link
-          href="/browse"
-          className="text-sm text-paper-faint transition-colors hover:text-paper"
-        >
-          ← Browse
-        </Link>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <Link
+            href={kind === 'event' ? '/albums' : '/browse'}
+            className="text-sm text-paper-faint transition-colors hover:text-paper"
+          >
+            ← {kind === 'event' ? 'Albums' : 'Browse'}
+          </Link>
+          {kind === 'event' && <AddMemoriesButton context={{ eventId: id }} />}
+        </div>
+        {kind === 'event' && (
+          <p className="eyebrow mt-8">{collectionKind === 'event' ? 'Event album' : 'Album'}</p>
+        )}
         <h1 className="mt-4 text-[clamp(2.25rem,7vw,3.5rem)] font-semibold tracking-[-0.03em] leading-none text-balance">
           {title}
         </h1>

@@ -17,7 +17,12 @@ export function Nav() {
 
       <div className="relative flex items-center gap-0.5 rounded-full border border-white/10 bg-[#141414]/92 p-1.5 shadow-[0_18px_60px_-12px_rgba(0,0,0,0.9)] backdrop-blur-xl">
         <NavLink href="/" label="Home" icon="home" />
-        <NavLink href="/browse" label="Browse" icon="browse" />
+        <NavLink
+          href="/browse"
+          label="Browse"
+          icon="browse"
+          activePrefixes={['/browse', '/albums', '/collection']}
+        />
         <AddMemoriesButton />
         <NavLink href="/community" label="Board" icon="board" />
         <NavLink href="/you" label="You" icon="you" />
@@ -26,18 +31,29 @@ export function Nav() {
   )
 }
 
-function NavLink({ href, label, icon }: { href: string; label: string; icon: DockIcon }) {
+function NavLink({
+  href,
+  label,
+  icon,
+  activePrefixes,
+}: {
+  href: string
+  label: string
+  icon: DockIcon
+  activePrefixes?: string[]
+}) {
   const pathname = usePathname()
-  const active = href === '/' ? pathname === '/' : pathname.startsWith(href)
+  const active =
+    href === '/'
+      ? pathname === '/'
+      : (activePrefixes ?? [href]).some((prefix) => pathname.startsWith(prefix))
 
   return (
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
       className={`dock-link relative flex min-h-14 w-[3.55rem] flex-col items-center justify-center gap-1 rounded-full text-[10px] font-medium transition-all sm:w-[4.35rem] ${
-        active
-          ? 'text-white'
-          : 'text-paper-faint hover:text-paper-soft active:scale-[0.97]'
+        active ? 'text-white' : 'text-paper-faint hover:text-paper-soft active:scale-[0.97]'
       }`}
     >
       <DockGlyph icon={icon} bold={active} />

@@ -14,13 +14,7 @@ import { fullDate, warmDate } from '@/lib/format'
  * happens after something is actually changed.
  */
 
-export function InviteManager({
-  initial,
-  inviteBase,
-}: {
-  initial: Invite[]
-  inviteBase: string
-}) {
+export function InviteManager({ initial, inviteBase }: { initial: Invite[]; inviteBase: string }) {
   const [people, setPeople] = useState(initial)
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
@@ -69,8 +63,8 @@ export function InviteManager({
       <p className="eyebrow mb-3">Family members &amp; invitations</p>
       <h2 className="mb-2 font-display text-title">Bring everyone in</h2>
       <p className="mb-8 max-w-lg text-paper-dim">
-        Add someone&rsquo;s email, then text them the link. They sign in with a link to their
-        own inbox — no password to invent or forget.
+        Add someone&rsquo;s email, then text them the link. They sign in with a link to their own
+        inbox — no password to invent or forget.
       </p>
 
       <form onSubmit={invite} className="mb-8 flex flex-wrap gap-3">
@@ -111,7 +105,10 @@ export function InviteManager({
 
       <ul className="divide-y divide-[color:var(--color-edge)]">
         {people.map((person) => (
-          <li key={person.email} className="flex flex-col items-start justify-between gap-2 py-3.5 sm:flex-row sm:items-center sm:gap-4">
+          <li
+            key={person.email}
+            className="flex flex-col items-start justify-between gap-2 py-3.5 sm:flex-row sm:items-center sm:gap-4"
+          >
             <div className="min-w-0">
               <p className="truncate text-paper">
                 {person.display_name || person.email.split('@')[0]}
@@ -192,9 +189,7 @@ export function UploadLinkManager({
       </p>
 
       {events.length === 0 ? (
-        <p className="text-sm text-paper-faint">
-          Make an event first and these become available.
-        </p>
+        <p className="text-sm text-paper-faint">Make an event first and these become available.</p>
       ) : (
         <form onSubmit={create} className="mb-8 flex flex-wrap gap-3">
           <select
@@ -252,14 +247,11 @@ export function UploadLinkManager({
 
 // ---------------------------------------------------------------------------
 
-export function EventManager({
-  initial,
-}: {
-  initial: (EventRow & { media_count: number })[]
-}) {
+export function EventManager({ initial }: { initial: (EventRow & { media_count: number })[] }) {
   const [list, setList] = useState(initial)
   const [name, setName] = useState('')
   const [date, setDate] = useState('')
+  const [kind, setKind] = useState<'album' | 'event'>('album')
   const [busy, setBusy] = useState(false)
 
   async function create(event: React.FormEvent) {
@@ -270,13 +262,14 @@ export function EventManager({
       const response = await fetch('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, eventDate: date || null, kind: 'event' }),
+        body: JSON.stringify({ name, eventDate: date || null, kind }),
       })
       if (response.ok) {
         const data = (await response.json()) as { event: EventRow }
         setList((current) => [{ ...data.event, media_count: 0 }, ...current])
         setName('')
         setDate('')
+        setKind('album')
       }
     } finally {
       setBusy(false)
@@ -304,6 +297,15 @@ export function EventManager({
           onChange={(event) => setDate(event.target.value)}
           className="field basis-44"
         />
+        <select
+          value={kind}
+          onChange={(event) => setKind(event.target.value as 'album' | 'event')}
+          className="field basis-44"
+          aria-label="Collection type"
+        >
+          <option value="album">Album</option>
+          <option value="event">Event album</option>
+        </select>
         <button type="submit" disabled={busy || !name.trim()} className="btn btn-primary">
           {busy ? 'Adding…' : 'Add'}
         </button>
@@ -327,11 +329,7 @@ export function EventManager({
           </li>
         ))}
       </ul>
-      {list.length === 0 && (
-        <p className="text-sm text-paper-faint">
-          No albums or events yet.
-        </p>
-      )}
+      {list.length === 0 && <p className="text-sm text-paper-faint">No albums or events yet.</p>}
     </section>
   )
 }
@@ -426,11 +424,7 @@ export function MusicManager({ initial }: { initial: { id: string; title: string
           </li>
         ))}
       </ul>
-      {tracks.length === 0 && (
-        <p className="text-sm text-paper-faint">
-          No audio tracks added.
-        </p>
-      )}
+      {tracks.length === 0 && <p className="text-sm text-paper-faint">No audio tracks added.</p>}
     </section>
   )
 }

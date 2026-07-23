@@ -10,13 +10,7 @@ import { PeopleStack } from '@/components/PeopleStack'
 import { getRecentActivity } from '@/lib/community/activity'
 import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
-import {
-  getBrowseCovers,
-  getEvents,
-  getFeed,
-  getOnThisDay,
-  getYears,
-} from '@/lib/queries'
+import { getBrowseCovers, getEvents, getFeed, getOnThisDay, getYears } from '@/lib/queries'
 import { reconcileProcessingVideos } from '@/lib/reconcile'
 import { readDb } from '@/lib/db'
 import { dailyIndex, fullDate, season, yearsAgo } from '@/lib/format'
@@ -35,19 +29,29 @@ export default async function HomePage() {
   await reconcileProcessingVideos()
 
   const lastYear = new Date().getFullYear() - 1
-  const [archive, recent, onThisDay, favorites, events, years, activity, videos, photos, lastYearItems] =
-    await Promise.all([
-      getFeed(db, { limit: 36 }),
-      getFeed(db, { limit: 14 }),
-      getOnThisDay(db),
-      getFeed(db, { favorite: true, limit: 18 }),
-      getEvents(db),
-      getYears(db),
-      getRecentActivity(db, 10),
-      getFeed(db, { mediaType: 'video', limit: 18 }),
-      getFeed(db, { mediaType: 'photo', limit: 18 }),
-      getFeed(db, { year: lastYear, limit: 18, order: 'taken' }),
-    ])
+  const [
+    archive,
+    recent,
+    onThisDay,
+    favorites,
+    events,
+    years,
+    activity,
+    videos,
+    photos,
+    lastYearItems,
+  ] = await Promise.all([
+    getFeed(db, { limit: 36 }),
+    getFeed(db, { limit: 14 }),
+    getOnThisDay(db),
+    getFeed(db, { favorite: true, limit: 18 }),
+    getEvents(db),
+    getYears(db),
+    getRecentActivity(db, 10),
+    getFeed(db, { mediaType: 'video', limit: 18 }),
+    getFeed(db, { mediaType: 'photo', limit: 18 }),
+    getFeed(db, { year: lastYear, limit: 18, order: 'taken' }),
+  ])
   const albums = events.filter((event) => event.media_count > 0).slice(0, 12)
   const covers = await getBrowseCovers(db, { people: [], events: albums, years })
 
@@ -69,7 +73,10 @@ export default async function HomePage() {
   const favoriteItems = takeUnused(favorites)
   const lastYearRow = takeUnused(lastYearItems)
   const shuffledArchive = archive.length
-    ? [...archive.slice(dailyIndex(archive.length)), ...archive.slice(0, dailyIndex(archive.length))]
+    ? [
+        ...archive.slice(dailyIndex(archive.length)),
+        ...archive.slice(0, dailyIndex(archive.length)),
+      ]
     : []
   const shuffled = takeUnused(shuffledArchive, 16)
 
@@ -90,13 +97,15 @@ export default async function HomePage() {
           {activity.length > 0 && <ActivityStrip items={activity} />}
 
           {albums.length > 0 && (
-            <Rail title="Albums" href="/browse">
+            <Rail title="Albums" href="/albums">
               {albums.map((album) => (
                 <CoverTile
                   key={album.id}
                   href={`/collection/event/${album.id}`}
                   label={album.name}
-                  sublabel={album.event_date ? fullDate(album.event_date) : `${album.media_count} items`}
+                  sublabel={
+                    album.event_date ? fullDate(album.event_date) : `${album.media_count} items`
+                  }
                   cover={covers.events.get(album.id)}
                 />
               ))}
@@ -113,7 +122,9 @@ export default async function HomePage() {
 
           {photoItems.length > 0 && (
             <Rail title="Photos">
-              {photoItems.map((m) => <MediaTile key={m.id} media={m} />)}
+              {photoItems.map((m) => (
+                <MediaTile key={m.id} media={m} />
+              ))}
             </Rail>
           )}
 
@@ -127,19 +138,25 @@ export default async function HomePage() {
 
           {todayItems.length > 0 && (
             <Rail title={onThisDayTitle(todayItems[0].taken_at)}>
-              {todayItems.map((m) => <MediaTile key={m.id} media={m} />)}
+              {todayItems.map((m) => (
+                <MediaTile key={m.id} media={m} />
+              ))}
             </Rail>
           )}
 
           {lastYearRow.length > 0 && (
             <Rail title={String(lastYear)}>
-              {lastYearRow.map((m) => <MediaTile key={m.id} media={m} />)}
+              {lastYearRow.map((m) => (
+                <MediaTile key={m.id} media={m} />
+              ))}
             </Rail>
           )}
 
           {shuffled.length > 0 && (
             <Rail title="Shuffle">
-              {shuffled.map((m) => <MediaTile key={m.id} media={m} />)}
+              {shuffled.map((m) => (
+                <MediaTile key={m.id} media={m} />
+              ))}
             </Rail>
           )}
 
@@ -158,7 +175,6 @@ export default async function HomePage() {
               ))}
             </Rail>
           )}
-
         </div>
       )}
     </Shell>
@@ -274,9 +290,7 @@ function MovieModeCard({ backdrop }: { backdrop?: MediaView }) {
           </span>
           Movie Mode
         </span>
-        <span className="text-[0.8125rem] text-white/60">
-          Play photos and videos continuously
-        </span>
+        <span className="text-[0.8125rem] text-white/60">Play photos and videos continuously</span>
       </span>
     </Link>
   )

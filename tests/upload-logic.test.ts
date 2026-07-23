@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { latestUploadBatch } from '../lib/client/albums.ts'
 import {
   boundedOverallProgress,
   fileSignature,
@@ -42,4 +43,18 @@ test('overall progress is real, bounded, and stable for an empty queue', () => {
   assert.equal(boundedOverallProgress([]), 0)
   assert.equal(boundedOverallProgress([{ progress: 0.25 }, { progress: 0.75 }]), 50)
   assert.equal(boundedOverallProgress([{ progress: -1 }, { progress: 2 }]), 50)
+})
+
+test('latest album batch stops at the first twenty-minute upload gap', () => {
+  const memories = [
+    { id: 'newest', created_at: '2026-07-23T12:30:00.000Z' },
+    { id: 'same-batch', created_at: '2026-07-23T12:11:00.000Z' },
+    { id: 'older-batch', created_at: '2026-07-23T11:40:00.000Z' },
+  ]
+
+  assert.deepEqual(
+    latestUploadBatch(memories).map((memory) => memory.id),
+    ['newest', 'same-batch'],
+  )
+  assert.deepEqual(latestUploadBatch([]), [])
 })

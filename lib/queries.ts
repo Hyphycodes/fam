@@ -23,6 +23,8 @@ export interface FeedOptions {
   /** Cursor: only rows created strictly before this ISO timestamp. */
   before?: string | null
   eventId?: string | null
+  /** Ready media that has not been filed into an album or event yet. */
+  unfiled?: boolean
   personId?: string | null
   year?: number | null
   favorite?: boolean
@@ -50,6 +52,7 @@ export async function getFeed(db: DB, options: FeedOptions = {}): Promise<MediaV
 
   if (options.before) query = query.lt('created_at', options.before)
   if (options.eventId) query = query.eq('event_id', options.eventId)
+  if (options.unfiled) query = query.is('event_id', null)
   if (options.year) query = query.eq('taken_year', options.year)
   if (options.favorite) query = query.eq('favorite', true)
   if (options.uploaderId) query = query.eq('uploader_id', options.uploaderId)

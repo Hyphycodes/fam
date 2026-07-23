@@ -50,8 +50,6 @@ export function UploadDetailsSheet({
   const [people, setPeople] = useState<TagChip[]>([])
   const [date, setDate] = useState('')
   const [location, setLocation] = useState('')
-  const [newAlbum, setNewAlbum] = useState('')
-  const [creatingAlbum, setCreatingAlbum] = useState(false)
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [cropId, setCropId] = useState<string | null>(null)
   const [reviewPage, setReviewPage] = useState(0)
@@ -232,29 +230,6 @@ export function UploadDetailsSheet({
     if (previewId && ids.has(previewId)) setPreviewId(null)
     if (cropId && ids.has(cropId)) setCropId(null)
     setItems((current) => current.filter((item) => !ids.has(item.id)))
-  }
-
-  async function createAlbum() {
-    const name = newAlbum.trim()
-    if (!name) return
-    setCreatingAlbum(true)
-    setError(null)
-    try {
-      const response = await fetch('/api/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, kind: 'album' }),
-      })
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(payload.error || 'Could not create the album.')
-      setEvents((current) => [payload.event as EventRow, ...current])
-      setEventId(payload.event.id)
-      setNewAlbum('')
-    } catch (albumError) {
-      setError(albumError instanceof Error ? albumError.message : 'Could not create the album.')
-    } finally {
-      setCreatingAlbum(false)
-    }
   }
 
   async function submit() {
@@ -613,22 +588,9 @@ export function UploadDetailsSheet({
                 <div className="mt-1.5">
                   <EventPicker events={events} value={eventId} onChange={setEventId} />
                 </div>
-                <div className="mt-2 flex gap-2">
-                  <input
-                    value={newAlbum}
-                    onChange={(event) => setNewAlbum(event.target.value)}
-                    placeholder="New album name"
-                    className="field py-2 text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void createAlbum()}
-                    disabled={creatingAlbum || !newAlbum.trim()}
-                    className="btn btn-ghost shrink-0 px-3 py-2 text-sm"
-                  >
-                    {creatingAlbum ? 'Creating…' : 'Create'}
-                  </button>
-                </div>
+                <p className="mt-2 text-xs text-paper-faint">
+                  Choose one, or make a dated album without leaving this batch.
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-xs text-paper-faint">
