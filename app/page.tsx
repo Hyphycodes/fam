@@ -1,193 +1,285 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { CoverTile, MediaTile, Rail } from '@/components/Rail'
 import { Shell } from '@/components/Shell'
 import { VideoFrame } from '@/components/VideoFrame'
 import { AddMemoriesButton } from '@/components/AddMemories'
-import { ActivityStrip } from '@/components/ActivityStrip'
-import { Avatar } from '@/components/Avatar'
-import { PeopleStack } from '@/components/PeopleStack'
-import { getRecentActivity } from '@/lib/community/activity'
 import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
-import { getBrowseCovers, getEvents, getFeed, getOnThisDay, getYears } from '@/lib/queries'
+import { getBrowseCovers, getEvents, getFeed, getOnThisDay } from '@/lib/queries'
 import { reconcileProcessingVideos } from '@/lib/reconcile'
 import { readDb } from '@/lib/db'
-import { dailyIndex, fullDate, season, yearsAgo } from '@/lib/format'
+import { dailyIndex, fullDate, season } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Home is the answer to "what should we relive next?" It deliberately deals
+ * in a few considered invitations, while the Browse and album routes retain
+ * the exhaustive archive views.
+ */
 export default async function HomePage() {
   if (!isConfigured('supabase')) redirect('/setup')
 
   const viewer = await requireViewer()
   const db = readDb()
 
-  // Catch any video whose uploader closed the tab before Cloudflare finished —
-  // without this, a transcoded video could sit invisible forever.
+  // Catch any video whose uploader closed the tab before Cloudflare finished.
   await reconcileProcessingVideos()
 
-  const lastYear = new Date().getFullYear() - 1
-  const [
-    archive,
-    recent,
-    onThisDay,
-    favorites,
-    events,
-    years,
-    activity,
-    videos,
-    photos,
-    lastYearItems,
-  ] = await Promise.all([
-    getFeed(db, { limit: 36 }),
-    getFeed(db, { limit: 14 }),
+  const [archive, onThisDay, favorites, events, photoCover, videoCover] = await Promise.all([
+    getFeed(db, { limit: 72 }),
     getOnThisDay(db),
-    getFeed(db, { favorite: true, limit: 18 }),
+    getFeed(db, { favorite: true, limit: 24 }),
     getEvents(db),
-    getYears(db),
-    getRecentActivity(db, 10),
-    getFeed(db, { mediaType: 'video', limit: 18 }),
-    getFeed(db, { mediaType: 'photo', limit: 18 }),
-    getFeed(db, { year: lastYear, limit: 18, order: 'taken' }),
+    getFeed(db, { mediaType: 'photo', limit: 1 }),
+    getFeed(db, { mediaType: 'video', limit: 1 }),
   ])
-  const albums = events.filter((event) => event.media_count > 0).slice(0, 12)
-  const covers = await getBrowseCovers(db, { people: [], events: albums, years })
+  const albums = events.filter((event) => event.media_count > 0).slice(0, 10)
+  const covers = await getBrowseCovers(db, { people: [], events: albums, years: [] })
 
-  // The billboard: today's pick from the favorites, or the newest memory.
-  // Day-of-year keeps it stable for the day and fresh tomorrow.
-  const heroPool = (favorites.length > 0 ? favorites : recent).filter(
-    (m) => m.display_url || m.thumb_url,
+  // A dated memory gets first dibs. When there isn't one, favorites are the
+  // natural place to start; a stable daily index keeps the page from feeling
+  // like a latest-upload dashboard.
+  const dated = onThisDay.filter((memory) => memory.display_url || memory.thumb_url)
+  const featuredPool = (
+    dated.length > 0 ? dated : favorites.length > 0 ? favorites : archive
+  ).filter((memory) => memory.display_url || memory.thumb_url)
+  const featured = featuredPool.length > 0 ? featuredPool[dailyIndex(featuredPool.length)] : null
+  const shufflePool = archive.filter(
+    (memory) => memory.id !== featured?.id && (memory.display_url || memory.thumb_url),
   )
-  const hero = heroPool.length > 0 ? heroPool[dailyIndex(heroPool.length)] : null
-  const used = new Set(recent.map((item) => item.id))
-  const takeUnused = (items: MediaView[], limit = 14) => {
-    const next = items.filter((item) => !used.has(item.id)).slice(0, limit)
-    next.forEach((item) => used.add(item.id))
-    return next
-  }
-  const todayItems = takeUnused(onThisDay)
-  const videoItems = takeUnused(videos)
-  const photoItems = takeUnused(photos)
-  const favoriteItems = takeUnused(favorites)
-  const lastYearRow = takeUnused(lastYearItems)
-  const shuffledArchive = archive.length
-    ? [
-        ...archive.slice(dailyIndex(archive.length)),
-        ...archive.slice(0, dailyIndex(archive.length)),
-      ]
-    : []
-  const shuffled = takeUnused(shuffledArchive, 16)
+  const shuffle = shufflePool.length > 0 ? shufflePool[dailyIndex(shufflePool.length)] : null
 
   return (
-    <Shell viewer={viewer} immersive={Boolean(hero)}>
-      {hero && <Billboard media={hero} />}
+    <Shell viewer={viewer} immersive={Boolean(featured)}>
+      {featured && (
+        <Billboard
+          media={featured}
+          eyebrow={dated.length > 0 ? 'On this day' : 'Featured memory'}
+        />
+      )}
 
-      {recent.length === 0 ? (
+      {archive.length === 0 ? (
         <FirstTime name={viewer.display_name} />
       ) : (
-        <div className="mt-10 flex flex-col gap-9 sm:mt-12 sm:gap-11">
-          <Rail title="Recently added" href="/browse">
-            {recent.map((m) => (
-              <MediaTile key={m.id} media={m} />
-            ))}
-          </Rail>
-
-          {activity.length > 0 && <ActivityStrip items={activity} />}
-
+        <div className="mt-10 flex flex-col gap-14 sm:mt-12 sm:gap-18">
           {albums.length > 0 && (
-            <Rail title="Albums" href="/albums">
-              {albums.map((album) => (
-                <CoverTile
-                  key={album.id}
-                  href={`/collection/event/${album.id}`}
-                  label={album.name}
-                  sublabel={
-                    album.event_date ? fullDate(album.event_date) : `${album.media_count} items`
-                  }
-                  cover={covers.events.get(album.id)}
-                />
-              ))}
-            </Rail>
+            <section aria-labelledby="recent-albums">
+              <SectionHeading
+                id="recent-albums"
+                eyebrow="Experiences"
+                title="Recently added albums"
+                href="/albums"
+              />
+              <div className="home-album-rail">
+                {albums.map((album) => (
+                  <AlbumCard
+                    key={album.id}
+                    href={`/collection/event/${album.id}`}
+                    name={album.name}
+                    date={album.event_date}
+                    count={album.media_count}
+                    cover={covers.events.get(album.id)}
+                  />
+                ))}
+              </div>
+            </section>
           )}
 
-          {videoItems.length > 0 && (
-            <Rail title="Videos">
-              {videoItems.map((m) => (
-                <MediaTile key={m.id} media={m} />
-              ))}
-            </Rail>
-          )}
+          {shuffle && <ShuffleCard media={shuffle} />}
 
-          {photoItems.length > 0 && (
-            <Rail title="Photos">
-              {photoItems.map((m) => (
-                <MediaTile key={m.id} media={m} />
-              ))}
-            </Rail>
-          )}
-
-          {favoriteItems.length > 0 && (
-            <Rail title="Favorites">
-              {favoriteItems.map((m) => (
-                <MediaTile key={m.id} media={m} />
-              ))}
-            </Rail>
-          )}
-
-          {todayItems.length > 0 && (
-            <Rail title={onThisDayTitle(todayItems[0].taken_at)}>
-              {todayItems.map((m) => (
-                <MediaTile key={m.id} media={m} />
-              ))}
-            </Rail>
-          )}
-
-          {lastYearRow.length > 0 && (
-            <Rail title={String(lastYear)}>
-              {lastYearRow.map((m) => (
-                <MediaTile key={m.id} media={m} />
-              ))}
-            </Rail>
-          )}
-
-          {shuffled.length > 0 && (
-            <Rail title="Shuffle">
-              {shuffled.map((m) => (
-                <MediaTile key={m.id} media={m} />
-              ))}
-            </Rail>
-          )}
-
-          <MovieModeCard backdrop={heroPool[1] ?? recent[0]} />
-
-          {years.length > 1 && (
-            <Rail title="By year" href="/browse">
-              {years.map((entry) => (
-                <CoverTile
-                  key={entry.year}
-                  href={`/collection/year/${entry.year}`}
-                  label={String(entry.year)}
-                  sublabel={`${entry.count} ${entry.count === 1 ? 'item' : 'items'}`}
-                  cover={covers.years.get(entry.year)}
-                />
-              ))}
-            </Rail>
-          )}
+          <section aria-labelledby="home-collections">
+            <SectionHeading
+              id="home-collections"
+              eyebrow="The archive"
+              title="Collections"
+              href="/browse"
+            />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <CollectionCard
+                href="/browse"
+                title="Photos"
+                detail="Every still"
+                cover={photoCover[0]}
+              />
+              <CollectionCard
+                href="/browse"
+                title="Videos"
+                detail="Every moving memory"
+                cover={videoCover[0]}
+              />
+              <CollectionCard
+                href="/movie"
+                title="Movies"
+                detail="Play the family film"
+                cover={featured ?? shuffle ?? photoCover[0] ?? videoCover[0]}
+                play
+              />
+            </div>
+          </section>
         </div>
       )}
     </Shell>
   )
 }
 
-/**
- * The billboard. One memory fills the top of the screen; if it's a video, a
- * muted preview plays behind the title. Everything else is scrim and type.
- */
-function Billboard({ media }: { media: MediaView }) {
+function SectionHeading({
+  id,
+  eyebrow,
+  title,
+  href,
+}: {
+  id: string
+  eyebrow: string
+  title: string
+  href?: string
+}) {
+  return (
+    <div className="mb-5 flex items-end justify-between gap-4">
+      <div>
+        <p className="eyebrow mb-2">{eyebrow}</p>
+        <h2 id={id} className="text-2xl font-semibold tracking-[-0.025em] text-paper sm:text-3xl">
+          {title}
+        </h2>
+      </div>
+      {href && (
+        <Link
+          href={href}
+          className="mb-1 shrink-0 text-sm text-paper-faint transition-colors hover:text-paper"
+        >
+          View all
+        </Link>
+      )}
+    </div>
+  )
+}
+
+function AlbumCard({
+  href,
+  name,
+  date,
+  count,
+  cover,
+}: {
+  href: string
+  name: string
+  date: string | null
+  count: number
+  cover?: MediaView
+}) {
+  const source = cover?.thumb_url ?? cover?.display_url
+  const memories = `${count} ${count === 1 ? 'memory' : 'memories'}`
+
+  return (
+    <Link
+      href={href}
+      className="home-album-card group"
+      aria-label={`${name}, ${date ? `${fullDate(date)}, ` : ''}${memories}`}
+    >
+      {source ? (
+        <img src={source} alt="" loading="lazy" decoding="async" />
+      ) : (
+        <span className="home-album-fallback" aria-hidden="true">
+          {name.charAt(0)}
+        </span>
+      )}
+      <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
+      <span className="absolute inset-x-0 bottom-0 p-4 sm:p-5">
+        <span className="block text-xl leading-tight font-semibold tracking-[-0.025em] text-white sm:text-2xl">
+          {name}
+        </span>
+        <span className="meta-mono mt-2 block text-white/65">
+          {date ? `${fullDate(date)} · ` : ''}
+          {memories}
+        </span>
+      </span>
+    </Link>
+  )
+}
+
+function ShuffleCard({ media }: { media: MediaView }) {
+  const source = media.thumb_url ?? media.display_url
+  const title = media.caption || media.event_name || season(media.taken_at)
+
+  return (
+    <section aria-labelledby="shuffle-title">
+      <SectionHeading id="shuffle-title" eyebrow="One more thing" title="Shuffle" />
+      <Link
+        href={`/m/${media.id}`}
+        className="group relative block min-h-64 overflow-hidden rounded-xl bg-ink-raised sm:min-h-80"
+        aria-label={`Open ${title}`}
+      >
+        {source ? (
+          <img
+            src={source}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-[1400ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.025]"
+          />
+        ) : (
+          <span className="absolute inset-0 animate-sweep" />
+        )}
+        <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
+        <span className="absolute inset-x-0 bottom-0 p-5 sm:p-7">
+          <span className="eyebrow text-white/60">A memory to return to</span>
+          <span className="mt-2 block max-w-xl text-2xl font-semibold tracking-[-0.025em] text-white sm:text-3xl">
+            {title}
+          </span>
+          <span className="meta-mono mt-2 block text-white/65">{fullDate(media.taken_at)}</span>
+        </span>
+      </Link>
+    </section>
+  )
+}
+
+function CollectionCard({
+  href,
+  title,
+  detail,
+  cover,
+  play = false,
+}: {
+  href: string
+  title: string
+  detail: string
+  cover?: MediaView | null
+  play?: boolean
+}) {
+  const source = cover?.thumb_url ?? cover?.display_url
+
+  return (
+    <Link
+      href={href}
+      className="group relative block aspect-[16/10] overflow-hidden rounded-xl bg-ink-raised"
+    >
+      {source ? (
+        <img
+          src={source}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+        />
+      ) : (
+        <span className="absolute inset-0 bg-ink-high" />
+      )}
+      <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-black/5" />
+      <span className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4">
+        <span>
+          <span className="block text-lg font-semibold tracking-[-0.02em] text-white">{title}</span>
+          <span className="mt-1 block text-xs text-white/65">{detail}</span>
+        </span>
+        {play && <PlayGlyph className="mb-0.5 h-8 w-8 rounded-full bg-white p-2 text-ink" />}
+      </span>
+    </Link>
+  )
+}
+
+function Billboard({ media, eyebrow }: { media: MediaView; eyebrow: string }) {
   const still = media.display_url ?? media.thumb_url
-  const title = media.caption || season(media.taken_at)
+  const title = media.caption || media.event_name || season(media.taken_at)
 
   return (
     <section className="full-bleed relative overflow-hidden bg-ink-raised">
@@ -214,12 +306,11 @@ function Billboard({ media }: { media: MediaView }) {
           />
         ) : null}
 
-        {/* Scrims: enough for the header and the title to read, no more. */}
         <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-ink/70 to-transparent" />
         <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-ink via-ink/45 to-transparent" />
 
         <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-5xl px-5 pb-8 sm:px-6 sm:pb-12">
-          <p className="eyebrow animate-rise">Featured</p>
+          <p className="eyebrow animate-rise text-white/60">{eyebrow}</p>
           <h1
             className="mt-2 max-w-2xl text-[clamp(1.85rem,5.5vw,3.25rem)] leading-[1.05] font-semibold tracking-[-0.025em] text-white text-balance animate-rise"
             style={{ animationDelay: '60ms' }}
@@ -231,35 +322,19 @@ function Billboard({ media }: { media: MediaView }) {
             style={{ animationDelay: '120ms' }}
           >
             {fullDate(media.taken_at)}
-            <span className="text-white/30">·</span>
-            <span className="inline-flex items-center gap-1.5">
-              <Avatar name={media.uploader_name} src={media.uploader_avatar_url} size={18} />
-              {media.uploader_name}
-            </span>
-            {media.event_name && (
+            {media.event_name && media.event_name !== title && (
               <>
                 <span className="text-white/30">·</span>
                 {media.event_name}
               </>
             )}
           </p>
-          {media.people.length > 0 && (
-            <p
-              className="mt-2 flex items-center gap-2 animate-rise"
-              style={{ animationDelay: '150ms' }}
-            >
-              <PeopleStack people={media.people} size={22} max={5} />
-              <span className="meta-mono text-white/50">
-                {media.people.map((p) => p.name).join(', ')}
-              </span>
-            </p>
-          )}
           <div
             className="mt-5 flex items-center gap-3 animate-rise"
             style={{ animationDelay: '180ms' }}
           >
             <Link href={`/m/${media.id}`} className="btn btn-primary">
-              <PlayGlyph /> {media.type === 'video' ? 'Play' : 'View'}
+              <PlayGlyph /> {media.type === 'video' ? 'Play memory' : 'View memory'}
             </Link>
             <Link href="/movie" className="btn btn-ghost backdrop-blur-sm">
               Movie Mode
@@ -271,59 +346,34 @@ function Billboard({ media }: { media: MediaView }) {
   )
 }
 
-/** A wide, quiet invitation to lean back. Footage behind, two lines on top. */
-function MovieModeCard({ backdrop }: { backdrop?: MediaView }) {
-  const source = backdrop?.thumb_url ?? backdrop?.display_url
-
+function PlayGlyph({ className }: { className?: string } = {}) {
   return (
-    <Link
-      href="/movie"
-      className="tile group block aspect-[21/8] min-h-[7.5rem] w-full"
-      aria-label="Start Movie Mode"
+    <svg
+      className={className}
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
     >
-      {source && <img src={source} alt="" loading="lazy" decoding="async" />}
-      <span className="absolute inset-0 bg-black/60 transition-colors duration-300 group-hover:bg-black/50" />
-      <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-6 text-center">
-        <span className="flex items-center gap-2.5 text-lg font-semibold tracking-[-0.01em] text-white sm:text-xl">
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-ink transition-transform duration-300 group-hover:scale-105">
-            <PlayGlyph />
-          </span>
-          Movie Mode
-        </span>
-        <span className="text-[0.8125rem] text-white/60">Play photos and videos continuously</span>
-      </span>
-    </Link>
-  )
-}
-
-function PlayGlyph() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
       <path d="M8 5.5v13l11-6.5z" />
     </svg>
   )
-}
-
-function onThisDayTitle(takenAt: string): string {
-  const years = yearsAgo(takenAt)
-  if (years <= 0) return 'Earlier today'
-  if (years === 1) return 'A year ago today'
-  return `${years} years ago today`
 }
 
 function FirstTime({ name }: { name: string }) {
   return (
     <div className="mx-auto max-w-md py-24 text-center animate-rise sm:py-32">
       <h1 className="text-3xl font-semibold tracking-[-0.02em] text-balance sm:text-4xl">
-        No items yet, {name}.
+        The first memory is waiting, {name}.
       </h1>
       <p className="mt-4 text-[0.9375rem] leading-relaxed text-paper-dim text-balance">
-        Add photos or videos to get started.
+        Add a few photos or videos, then keep the day together in an album.
       </p>
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
         <AddMemoriesButton variant="hero" />
-        <Link href="/settings" className="btn btn-ghost">
-          Invite the family
+        <Link href="/albums" className="btn btn-ghost">
+          Make an album
         </Link>
       </div>
     </div>

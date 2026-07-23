@@ -234,6 +234,63 @@
     flex: 0 0 auto;
   }
 
+  /* Home deals in a few substantial experiences, not a ribbon of uploads. */
+  .home-album-rail {
+    display: flex;
+    gap: 0.875rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: var(--gutter);
+    scrollbar-width: none;
+    margin-inline: calc(-1 * var(--gutter));
+    padding: 0.25rem var(--gutter) 0.65rem;
+  }
+  .home-album-rail::-webkit-scrollbar {
+    display: none;
+  }
+  .home-album-card {
+    position: relative;
+    display: block;
+    flex: 0 0 min(78vw, 22rem);
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: 0.75rem;
+    background: var(--color-ink-raised);
+    scroll-snap-align: start;
+    transition:
+      transform 380ms var(--ease-cinema),
+      box-shadow 380ms var(--ease-cinema);
+  }
+  .home-album-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 800ms var(--ease-cinema);
+  }
+  .home-album-card:hover img,
+  .home-album-card:focus-visible img {
+    transform: scale(1.04);
+  }
+  @media (hover: hover) {
+    .home-album-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 22px 48px -16px rgba(0, 0, 0, 0.85);
+    }
+  }
+  .home-album-fallback {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    place-items: center;
+    background:
+      radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.1), transparent 45%),
+      var(--color-ink-high);
+    color: rgba(255, 255, 255, 0.15);
+    font-size: clamp(4rem, 14vw, 7rem);
+    font-weight: 600;
+  }
+
   /* A tile lifts toward the light on hover/focus. Transform-only. */
   .tile {
     position: relative;
