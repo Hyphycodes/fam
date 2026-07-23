@@ -53,18 +53,22 @@ export default async function CollectionPage({
     query = `year=${year}`
   }
 
-  // Older free-text person rows may predate the member/profile link. Resolve
-  // an exact display-name match at read time so "Added by" still has the
-  // correct uploader meaning without rewriting historical tags.
-  if (kind === 'person' && person && !person.member_id && !person.profile_id) {
+  // A family member can have both a newer passcode identity and an older email
+  // profile. Resolve either missing side by exact display name so the "Added
+  // by" shelf includes historical and current uploads without rewriting tags.
+  if (kind === 'person' && person && (!person.member_id || !person.profile_id)) {
     const [{ data: members }, { data: profiles }] = await Promise.all([
-      db.from('members').select('id').ilike('display_name', person.name).limit(1),
-      db.from('profiles').select('id').ilike('display_name', person.name).limit(1),
+      person.member_id
+        ? Promise.resolve({ data: [] })
+        : db.from('members').select('id').ilike('display_name', person.name).limit(1),
+      person.profile_id
+        ? Promise.resolve({ data: [] })
+        : db.from('profiles').select('id').ilike('display_name', person.name).limit(1),
     ])
     person = {
       ...person,
-      member_id: members?.[0]?.id ?? null,
-      profile_id: members?.[0] ? null : (profiles?.[0]?.id ?? null),
+      member_id: person.member_id ?? members?.[0]?.id ?? null,
+      profile_id: person.profile_id ?? profiles?.[0]?.id ?? null,
     }
   }
 
@@ -76,10 +80,18 @@ export default async function CollectionPage({
       year: kind === 'year' ? Number(id) : null,
     }),
     kind === 'person' && person && (person.member_id || person.profile_id)
-      ? getFeed(db, {
-          limit: 60,
-          uploaderMemberId: person.member_id,
-          uploaderId: person.member_id ? null : person.profile_id,
+      ? Promise.all([
+          person.member_id
+            ? getFeed(db, { limit: 60, uploaderMemberId: person.member_id })
+            : Promise.resolve([]),
+          person.profile_id
+            ? getFeed(db, { limit: 60, uploaderId: person.profile_id })
+            : Promise.resolve([]),
+        ]).then((groups) => {
+          const byId = new Map(groups.flat().map((item) => [item.id, item]))
+          return [...byId.values()]
+            .sort((a, b) => b.created_at.localeCompare(a.created_at))
+            .slice(0, 60)
         })
       : Promise.resolve([]),
   ])
