@@ -23,21 +23,16 @@ export default async function LoginPage({
 
   return (
     <main className="lamplight relative flex min-h-dvh flex-col justify-center overflow-hidden px-6 py-20">
-      {/* A slow pool of lamplight behind the form — alive, not animated-at-you. */}
-      <div className="ember-orb -top-40 right-[-12rem]" aria-hidden />
-      <div className="ember-orb bottom-[-16rem] left-[-14rem] [animation-delay:-7s]" aria-hidden />
-
       <div className="relative mx-auto w-full max-w-sm">
         <p className="mb-5 text-[11px] tracking-[0.4em] text-paper-faint uppercase">
-          The family archive
+          Email sign in
         </p>
         <h1 className="font-display text-[clamp(4rem,16vw,6rem)] leading-[0.85]">
           {appName}
           <span className="text-ember">.</span>
         </h1>
         <p className="mt-6 text-lg text-paper-soft text-balance">
-          Everything we&rsquo;ve been meaning to put somewhere.{' '}
-          <span className="font-display text-xl text-paper italic">Just us.</span>
+          Enter your email to receive a sign-in link.
         </p>
 
         {error && ERRORS[error] && (

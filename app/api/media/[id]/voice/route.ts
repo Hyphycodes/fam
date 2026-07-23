@@ -102,7 +102,7 @@ export async function PUT(
       `^voice/\\d{4}/\\d{2}/${id.replace(/[^\w-]/g, '')}-voice-\\d+\\.(webm|m4a|mp3)$`,
     )
     if (!key || !expected.test(key)) {
-      return fail('That recording does not belong to this memory.')
+      return fail('That recording does not belong to this item.')
     }
 
     const db = await createClient()

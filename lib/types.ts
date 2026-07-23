@@ -109,6 +109,9 @@ export interface MediaRow {
   byte_size: number | null
   width: number | null
   height: number | null
+  content_hash: string | null
+  location_text: string | null
+  crop_metadata: CropMetadata | null
   caption: string | null
   favorite: boolean
   tags: string[]
@@ -127,7 +130,20 @@ export interface Person {
   id: string
   name: string
   profile_id: string | null
+  member_id: string | null
   created_at: string
+}
+
+export type CropAspect = 'free' | 'original' | '1:1' | '4:3' | '3:2' | '16:9' | '9:16'
+
+export interface CropMetadata {
+  aspect: CropAspect
+  /** Custom output ratio when aspect='free'. */
+  freeAspect?: number
+  zoom: number
+  x: number
+  y: number
+  rotation: 0 | 90 | 180 | 270
 }
 
 export interface Reaction {

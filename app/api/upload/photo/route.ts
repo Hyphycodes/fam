@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { fail, handleError, isUploader, logDbError, ok, readJson, resolveUploader } from '@/lib/api'
 import { buildKey, presignPut } from '@/lib/r2'
 import { isConfigured, missing } from '@/lib/env'
+import type { CropMetadata } from '@/lib/types'
 
 interface Body {
   filename?: string
@@ -15,6 +16,8 @@ interface Body {
   eventId?: string | null
   linkToken?: string | null
   uploaderLabel?: string | null
+  contentHash?: string | null
+  cropMetadata?: unknown
 }
 
 const EXTENSION: Record<string, string> = {
@@ -56,6 +59,53 @@ export async function POST(request: Request) {
     const originalType = body.contentType || 'application/octet-stream'
     const displayType = body.displayType || 'image/jpeg'
     const thumbType = body.thumbType || 'image/jpeg'
+    const contentHash = normalizeHash(body.contentHash)
+    const cropMetadata = sanitizeCrop(body.cropMetadata)
+
+    if (contentHash) {
+      const { data: existing } = await uploader.db
+        .from('media')
+        .select('id, status, uploader_id, uploader_member, upload_link_id, r2_key, r2_display_key, r2_thumb_key')
+        .eq('content_hash', contentHash)
+        .maybeSingle()
+
+      if (existing) {
+        const mine =
+          uploader.kind === 'link'
+            ? existing.upload_link_id === uploader.linkId
+            : uploader.uploaderMember
+              ? existing.uploader_member === uploader.uploaderMember
+              : existing.uploader_id === uploader.uploaderId
+
+        if (
+          existing.status === 'ready' ||
+          !mine ||
+          !existing.r2_key ||
+          !existing.r2_display_key ||
+          !existing.r2_thumb_key
+        ) {
+          return ok({ mediaId: existing.id, duplicate: true })
+        }
+
+        await uploader.db
+          .from('media')
+          .update({
+            status: 'processing',
+            error_reason: null,
+            width: toInt(body.width),
+            height: toInt(body.height),
+            crop_metadata: cropMetadata,
+          })
+          .eq('id', existing.id)
+
+        const [original, display, thumb] = await Promise.all([
+          presignPut(existing.r2_key, originalType),
+          presignPut(existing.r2_display_key, displayType),
+          presignPut(existing.r2_thumb_key, thumbType),
+        ])
+        return ok({ mediaId: existing.id, put: { original, display, thumb }, resumed: true })
+      }
+    }
 
     // The id is minted here rather than by the database so the storage keys can
     // be written in the same insert. That lets the schema treat those columns as
@@ -91,6 +141,8 @@ export async function POST(request: Request) {
       byte_size: size,
       width: toInt(body.width),
       height: toInt(body.height),
+      content_hash: contentHash,
+      crop_metadata: cropMetadata,
       taken_at: takenAt.toISOString(),
       event_id: uploader.eventId,
       r2_key: keys.original,
@@ -100,6 +152,14 @@ export async function POST(request: Request) {
     })
 
     if (error) {
+      if (contentHash && error.code === '23505') {
+        const { data: duplicate } = await uploader.db
+          .from('media')
+          .select('id')
+          .eq('content_hash', contentHash)
+          .maybeSingle()
+        if (duplicate) return ok({ mediaId: duplicate.id, duplicate: true })
+      }
       logDbError('upload/photo', error, { mediaId })
       return fail(`Could not start that upload: ${error.message}`, 500)
     }
@@ -149,4 +209,30 @@ function parseDate(value: string | undefined): Date | null {
   if (date.getTime() > now + 86_400_000) return null
   if (date.getTime() < Date.UTC(1900, 0, 1)) return null
   return date
+}
+
+function normalizeHash(value: string | null | undefined): string | null {
+  const hash = value?.trim().toLowerCase()
+  return hash && /^[a-f0-9]{64}$/.test(hash) ? hash : null
+}
+
+function sanitizeCrop(value: unknown): CropMetadata | null {
+  if (!value || typeof value !== 'object') return null
+  const input = value as Record<string, unknown>
+  const aspects = ['free', 'original', '1:1', '4:3', '3:2', '16:9', '9:16'] as const
+  const aspect = aspects.find((entry) => entry === input.aspect)
+  const zoom = Number(input.zoom)
+  const x = Number(input.x)
+  const y = Number(input.y)
+  const rotation = Number(input.rotation)
+  const freeAspect = input.freeAspect == null ? undefined : Number(input.freeAspect)
+  if (
+    !aspect ||
+    !Number.isFinite(zoom) || zoom < 1 || zoom > 3 ||
+    !Number.isFinite(x) || x < -1 || x > 1 ||
+    !Number.isFinite(y) || y < -1 || y > 1 ||
+    ![0, 90, 180, 270].includes(rotation) ||
+    (freeAspect !== undefined && (!Number.isFinite(freeAspect) || freeAspect < 0.4 || freeAspect > 2.5))
+  ) return null
+  return { aspect, freeAspect, zoom, x, y, rotation: rotation as CropMetadata['rotation'] }
 }

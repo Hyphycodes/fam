@@ -399,16 +399,14 @@ function StartScreen({
 
       <div className="relative mx-auto w-full max-w-3xl">
         <p className="mb-4 text-xs tracking-[0.35em] text-paper-faint uppercase">Movie mode</p>
-        <h1 className="font-display text-[clamp(3rem,11vw,7rem)] leading-[0.9] text-balance">
-          Put it on
-          <br />
-          <span className="text-paper-dim italic">the big screen.</span>
+        <h1 className="text-[clamp(3rem,11vw,7rem)] font-semibold leading-[0.9] tracking-[-0.04em] text-balance">
+          Movie Mode
         </h1>
 
         <p className="mt-8 max-w-lg text-lg text-paper-soft text-balance">
           {count > 0
-            ? `${count} ${count === 1 ? 'memory' : 'memories'}, cut together — photos drifting, videos playing, music underneath.`
-            : 'Add a few memories first and this turns into something worth sitting down for.'}
+            ? `${count} ${count === 1 ? 'item' : 'items'} available for continuous playback.`
+            : 'Add photos or videos to use Movie Mode.'}
         </p>
 
         <div className="mt-12">

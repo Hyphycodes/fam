@@ -36,7 +36,7 @@ export function StorageHealth() {
       {state === 'done' && (
         <div className="mt-3 rounded-xl border border-edge bg-ink-high px-4 py-3 text-sm animate-rise">
           {health === null ? (
-            <p className="text-paper-dim">Could not run the check. Try again in a moment.</p>
+            <p className="text-paper-dim">Could not run the check. Try again.</p>
           ) : !health.configured ? (
             <p className="text-paper-dim">
               Not set up yet — missing{' '}

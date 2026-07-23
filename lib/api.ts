@@ -96,7 +96,7 @@ export async function resolveUploader(body: {
   }
 
   const token = body.linkToken?.trim()
-  if (!token) return { error: 'You need to be signed in to add memories.', status: 401 }
+  if (!token) return { error: 'You need to be signed in to add items.', status: 401 }
 
   // No session, so the token itself is the credential — check it with the
   // service role, then never trust anything else the caller said.

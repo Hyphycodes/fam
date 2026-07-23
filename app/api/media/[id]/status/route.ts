@@ -30,7 +30,7 @@ export async function GET(
       .eq('id', id)
       .maybeSingle()
 
-    if (!media) return fail('That memory is not here.', 404)
+    if (!media) return fail('That item is not available.', 404)
 
     if (!viewer && token) {
       const { data: link } = await admin

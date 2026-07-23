@@ -27,6 +27,8 @@ export interface FeedOptions {
   year?: number | null
   favorite?: boolean
   uploaderId?: string | null
+  uploaderMemberId?: string | null
+  mediaType?: 'photo' | 'video' | null
   /** Movie Mode wants the whole archive, shuffled client-side. */
   order?: 'newest' | 'oldest' | 'taken'
 }
@@ -51,17 +53,24 @@ export async function getFeed(db: DB, options: FeedOptions = {}): Promise<MediaV
   if (options.year) query = query.eq('taken_year', options.year)
   if (options.favorite) query = query.eq('favorite', true)
   if (options.uploaderId) query = query.eq('uploader_id', options.uploaderId)
+  if (options.uploaderMemberId) query = query.eq('uploader_member', options.uploaderMemberId)
+  if (options.mediaType) query = query.eq('type', options.mediaType)
 
   const { data, error } = await query
   if (error) throw new Error(`Could not load the feed: ${error.message}`)
 
   // Drop the join rows — they exist only to filter, and would otherwise ride
   // along on every MediaView.
-  const rows = ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => {
+  const rowsById = new Map<string, MediaRow>()
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
     const { media_people, ...media } = row
     void media_people
-    return media as unknown as MediaRow
-  })
+    const item = media as unknown as MediaRow
+    // Some PostgREST join shapes can repeat a parent row when a tag relation is
+    // filtered. A general feed must still render one item once.
+    rowsById.set(item.id, item)
+  }
+  const rows = [...rowsById.values()]
 
   return hydrate(db, rows)
 }
@@ -122,6 +131,7 @@ export async function getEvents(db: DB): Promise<(EventRow & { media_count: numb
     .from('events')
     .select('*')
     .order('event_date', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
 
   const rows = (events ?? []) as EventRow[]
   if (rows.length === 0) return []

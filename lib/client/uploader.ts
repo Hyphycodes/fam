@@ -2,6 +2,7 @@
 
 import * as tus from 'tus-js-client'
 import { classify, preparePhoto, type Kind } from '@/lib/client/media-prep'
+import type { CropMetadata } from '@/lib/types'
 
 /**
  * The upload queue.
@@ -20,6 +21,7 @@ export type ItemStatus =
   | 'uploading'
   | 'processing'
   | 'ready'
+  | 'duplicate'
   | 'error'
 
 export interface UploadItem {
@@ -31,7 +33,23 @@ export interface UploadItem {
   progress: number
   mediaId?: string
   previewUrl?: string
+  /** True when previewUrl came from URL.createObjectURL and must be revoked. */
+  ownsPreviewUrl?: boolean
+  contentHash?: string
+  crop?: CropMetadata | null
+  durationSeconds?: number | null
+  uploadUrl?: string
+  context: UploadContext
+  duplicateOf?: string
   error?: string
+}
+
+export interface UploadDraft {
+  file: File
+  previewUrl?: string
+  contentHash?: string
+  crop?: CropMetadata | null
+  durationSeconds?: number | null
 }
 
 /** The shared caption/tags/event a batch was given on the upload screen. */
@@ -39,6 +57,8 @@ export interface UploadDetails {
   caption?: string
   people?: { name: string }[]
   eventId?: string | null
+  takenAt?: string
+  location?: string
 }
 
 export interface UploadContext {
@@ -85,7 +105,6 @@ export class UploadQueue {
   private items: UploadItem[] = []
   private listeners = new Set<(items: UploadItem[]) => void>()
   private running = 0
-  private context: UploadContext = {}
   private aborters = new Map<string, () => void>()
 
   subscribe(listener: (items: UploadItem[]) => void): () => void {
@@ -106,18 +125,21 @@ export class UploadQueue {
     this.emit()
   }
 
-  setContext(context: UploadContext) {
-    this.context = context
-  }
-
-  add(files: File[]) {
-    for (const file of files) {
+  add(drafts: UploadDraft[], context: UploadContext = {}) {
+    for (const draft of drafts) {
+      const file = draft.file
       this.items.push({
         id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
         file,
         kind: classify(file),
         status: 'queued',
         progress: 0,
+        previewUrl: draft.previewUrl,
+        ownsPreviewUrl: Boolean(draft.previewUrl),
+        contentHash: draft.contentHash,
+        crop: draft.crop,
+        durationSeconds: draft.durationSeconds,
+        context,
       })
     }
     this.emit()
@@ -133,7 +155,7 @@ export class UploadQueue {
     this.aborters.get(id)?.()
     this.aborters.delete(id)
     const item = this.items.find((i) => i.id === id)
-    if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl)
+    if (item?.previewUrl && item.ownsPreviewUrl) URL.revokeObjectURL(item.previewUrl)
     this.items = this.items.filter((i) => i.id !== id)
     this.emit()
     this.pump()
@@ -146,17 +168,17 @@ export class UploadQueue {
    */
   clearFinished(options: { includeErrors?: boolean } = {}) {
     const isFinished = (item: UploadItem) =>
-      item.status === 'ready' || (options.includeErrors && item.status === 'error')
+      item.status === 'ready' || item.status === 'duplicate' || (options.includeErrors && item.status === 'error')
 
     for (const item of this.items) {
-      if (isFinished(item) && item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+      if (isFinished(item) && item.previewUrl && item.ownsPreviewUrl) URL.revokeObjectURL(item.previewUrl)
     }
     this.items = this.items.filter((item) => !isFinished(item))
     this.emit()
   }
 
   get pendingCount(): number {
-    return this.items.filter((i) => i.status !== 'ready' && i.status !== 'error').length
+    return this.items.filter((i) => !['ready', 'duplicate', 'error'].includes(i.status)).length
   }
 
   private pump() {
@@ -177,17 +199,20 @@ export class UploadQueue {
    * upload. Best-effort: the memory is already safely in the archive either
    * way, and these can always be added from its detail page.
    */
-  private async applyDetails(mediaId: string) {
-    const details = this.context.details
+  private async applyDetails(mediaId: string, item: UploadItem) {
+    const details = item.context.details
     if (!details) return
     const caption = details.caption?.trim()
     const people = details.people?.filter((p) => p.name.trim())
     const eventId = details.eventId
+    const location = details.location?.trim()
 
     const patch: Record<string, unknown> = {}
     if (caption) patch.caption = caption
     if (people && people.length > 0) patch.people = people.map((p) => p.name)
     if (eventId) patch.eventId = eventId
+    if (details.takenAt) patch.takenAt = details.takenAt
+    if (location) patch.location = location
     if (Object.keys(patch).length === 0) return
 
     try {
@@ -211,30 +236,47 @@ export class UploadQueue {
         status: 'error',
         error: error instanceof Error ? error.message : 'That one did not make it.',
       })
+    } finally {
+      this.aborters.delete(item.id)
     }
   }
 
   private async uploadPhoto(item: UploadItem) {
-    const prepared = await preparePhoto(item.file)
-    this.patch(item.id, { previewUrl: prepared.previewUrl })
+    const prepared = await preparePhoto(item.file, item.crop)
+    if (item.previewUrl && item.ownsPreviewUrl) URL.revokeObjectURL(item.previewUrl)
+    this.patch(item.id, { previewUrl: prepared.previewUrl, ownsPreviewUrl: true })
 
-    const { mediaId, put } = await postJson<{
+    const response = await postJson<{
       mediaId: string
-      put: { original: string; display: string; thumb: string }
+      duplicate?: boolean
+      put?: { original: string; display: string; thumb: string }
     }>('/api/upload/photo', {
-      ...this.context,
+      ...item.context,
       filename: item.file.name,
       contentType: item.file.type || 'application/octet-stream',
       size: item.file.size,
       width: prepared.width,
       height: prepared.height,
       takenAt: prepared.takenAt.toISOString(),
+      contentHash: item.contentHash,
+      cropMetadata: item.crop ?? null,
       displayType: prepared.display.type,
       thumbType: prepared.thumb.type,
     })
 
+    if (response.duplicate || !response.put) {
+      this.patch(item.id, {
+        mediaId: response.mediaId,
+        duplicateOf: response.mediaId,
+        status: 'duplicate',
+        progress: 1,
+      })
+      return
+    }
+    const { mediaId, put } = response
+
     this.patch(item.id, { mediaId, status: 'uploading' })
-    void this.applyDetails(mediaId)
+    void this.applyDetails(mediaId, item)
 
     // The original goes up untouched — that's what "download original" hands back.
     const parts: [string, Blob, string][] = [
@@ -284,25 +326,42 @@ export class UploadQueue {
     }
 
     await postJson(`/api/media/${mediaId}/ready`, {
-      linkToken: this.context.linkToken ?? null,
+      linkToken: item.context.linkToken ?? null,
     })
     this.patch(item.id, { status: 'ready', progress: 1 })
   }
 
   private async uploadVideo(item: UploadItem) {
-    const { mediaId, uploadUrl } = await postJson<{ mediaId: string; uploadUrl: string }>(
-      '/api/upload/video',
-      {
-        ...this.context,
+    let mediaId = item.mediaId
+    let uploadUrl = item.uploadUrl
+    if (!mediaId || !uploadUrl) {
+      const response = await postJson<{
+        mediaId: string
+        uploadUrl?: string
+        duplicate?: boolean
+      }>('/api/upload/video', {
+        ...item.context,
         filename: item.file.name,
         size: item.file.size,
         contentType: item.file.type || null,
-        takenAt: new Date(item.file.lastModified).toISOString(),
-      },
-    )
+        takenAt: item.context.details?.takenAt ?? new Date(item.file.lastModified).toISOString(),
+        contentHash: item.contentHash,
+      })
+      if (response.duplicate || !response.uploadUrl) {
+        this.patch(item.id, {
+          mediaId: response.mediaId,
+          duplicateOf: response.mediaId,
+          status: 'duplicate',
+          progress: 1,
+        })
+        return
+      }
+      mediaId = response.mediaId
+      uploadUrl = response.uploadUrl
+    }
 
-    this.patch(item.id, { mediaId, status: 'uploading' })
-    void this.applyDetails(mediaId)
+    this.patch(item.id, { mediaId, uploadUrl, status: 'uploading' })
+    void this.applyDetails(mediaId, item)
 
     await new Promise<void>((resolve, reject) => {
       const upload = new tus.Upload(item.file, {
@@ -341,8 +400,8 @@ export class UploadQueue {
         // link has no session, and without it every poll 401s. That route is
         // the only thing that ever marks a video ready, so the memory would
         // stay invisible forever.
-        const query = this.context.linkToken
-          ? `?token=${encodeURIComponent(this.context.linkToken)}`
+        const query = item.context.linkToken
+          ? `?token=${encodeURIComponent(item.context.linkToken)}`
           : ''
         const response = await fetch(`/api/media/${mediaId}/status${query}`, {
           cache: 'no-store',

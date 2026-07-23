@@ -32,7 +32,7 @@ export function Rail({
             href={href}
             className="text-xs text-paper-faint transition-colors hover:text-paper"
           >
-            All
+            View all
           </Link>
         )}
       </div>
@@ -99,7 +99,7 @@ export function PosterTile({
       <Link
         href={href}
         className="tile block aspect-[2/3]"
-        aria-label={`${label}, ${count} ${count === 1 ? 'memory' : 'memories'}`}
+      aria-label={`${label}, ${count} ${count === 1 ? 'item' : 'items'}`}
       >
         {source ? (
           <img src={source} alt="" loading="lazy" decoding="async" />
@@ -113,7 +113,7 @@ export function PosterTile({
           {label}
         </span>
       </Link>
-      <p className="meta-mono mt-1.5 px-0.5">{count} {count === 1 ? 'memory' : 'memories'}</p>
+      <p className="meta-mono mt-1.5 px-0.5">{count} {count === 1 ? 'item' : 'items'}</p>
     </div>
   )
 }

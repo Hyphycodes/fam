@@ -167,8 +167,7 @@ export function VoiceNotes({ mediaId }: { mediaId: string }) {
 
       {!recording && !busy && notes.length === 0 && (
         <p className="mt-3 text-sm leading-relaxed text-paper-faint">
-          Say who&rsquo;s in it, where it was, what happened next. It stays attached to this
-          memory for good.
+          Record a note about this item.
         </p>
       )}
 

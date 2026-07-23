@@ -1,5 +1,5 @@
 import { fail, handleError, isUploader, logDbError, ok, readJson, resolveUploader } from '@/lib/api'
-import { createDirectUpload } from '@/lib/stream'
+import { createDirectUpload, deleteVideo } from '@/lib/stream'
 
 interface Body {
   filename?: string
@@ -9,6 +9,7 @@ interface Body {
   eventId?: string | null
   linkToken?: string | null
   uploaderLabel?: string | null
+  contentHash?: string | null
 }
 
 /**
@@ -34,6 +35,16 @@ export async function POST(request: Request) {
     const uploader = await resolveUploader(body)
     if (!isUploader(uploader)) return fail(uploader.error, uploader.status)
 
+    const contentHash = normalizeHash(body.contentHash)
+    if (contentHash) {
+      const { data: existing } = await uploader.db
+        .from('media')
+        .select('id')
+        .eq('content_hash', contentHash)
+        .maybeSingle()
+      if (existing) return ok({ mediaId: existing.id, duplicate: true })
+    }
+
     const filename = (body.filename ?? 'video').slice(0, 200)
     const { uploadUrl, uid } = await createDirectUpload({
       uploadLength: size,
@@ -54,6 +65,7 @@ export async function POST(request: Request) {
         mime_type: body.contentType ?? null,
         original_filename: filename,
         byte_size: size,
+        content_hash: contentHash,
         taken_at: takenAt.toISOString(),
         event_id: uploader.eventId,
         status: 'processing',
@@ -63,6 +75,19 @@ export async function POST(request: Request) {
 
     if (error) {
       logDbError('upload/video', error, { streamUid: uid })
+      try {
+        await deleteVideo(uid)
+      } catch (cleanupError) {
+        console.error('[reel:upload/video] could not remove unused Stream upload', uid, cleanupError)
+      }
+      if (contentHash && error.code === '23505') {
+        const { data: duplicate } = await uploader.db
+          .from('media')
+          .select('id')
+          .eq('content_hash', contentHash)
+          .maybeSingle()
+        if (duplicate) return ok({ mediaId: duplicate.id, duplicate: true })
+      }
       return fail(`Could not start that upload: ${error.message}`, 500)
     }
 
@@ -81,4 +106,9 @@ function parseDate(value: string | undefined): Date | null {
   if (date.getTime() > now + 86_400_000) return null
   if (date.getTime() < Date.UTC(1900, 0, 1)) return null
   return date
+}
+
+function normalizeHash(value: string | null | undefined): string | null {
+  const hash = value?.trim().toLowerCase()
+  return hash && /^[a-f0-9]{64}$/.test(hash) ? hash : null
 }

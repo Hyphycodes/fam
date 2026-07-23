@@ -1,8 +1,7 @@
 import { fail, handleError, ok, readJson } from '@/lib/api'
-import { getSession } from '@/lib/auth'
+import { getActor } from '@/lib/community/actor'
 import { getViewer } from '@/lib/viewer'
 import { getEvents } from '@/lib/queries'
-import { createClient } from '@/lib/supabase/server'
 import { readDb } from '@/lib/db'
 
 /** The event list for pickers (upload details, editing) — any viewer. */
@@ -17,20 +16,26 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await getSession()
-    if (!session) return fail('Not signed in.', 401)
+    const actor = await getActor()
+    if (!actor) return fail('Not signed in.', 401)
 
-    const { name, eventDate } = await readJson<{ name?: string; eventDate?: string }>(request)
+    const { name, eventDate, kind } = await readJson<{
+      name?: string
+      eventDate?: string
+      kind?: 'album' | 'event'
+    }>(request)
     const title = (name ?? '').trim()
-    if (!title) return fail('Give it a name — "Water Party", "Christmas at Mom\'s".')
+    if (!title) return fail('Enter a name.')
 
-    const db = await createClient()
+    const db = actor.db
     const { data, error } = await db
       .from('events')
       .insert({
         name: title.slice(0, 200),
         event_date: eventDate || null,
-        created_by: session.userId,
+        kind: kind === 'event' ? 'event' : 'album',
+        created_by: actor.userId,
+        created_by_member: actor.memberId,
       })
       .select('*')
       .single()

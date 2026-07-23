@@ -270,7 +270,7 @@ export function EventManager({
       const response = await fetch('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, eventDate: date || null }),
+        body: JSON.stringify({ name, eventDate: date || null, kind: 'event' }),
       })
       if (response.ok) {
         const data = (await response.json()) as { event: EventRow }
@@ -286,10 +286,9 @@ export function EventManager({
   return (
     <section>
       <p className="eyebrow mb-3">Events &amp; collections</p>
-      <h2 className="mb-2 font-display text-title">Shape the chapters</h2>
+      <h2 className="mb-2 text-2xl font-semibold">Manage albums and events</h2>
       <p className="mb-8 max-w-lg text-paper-dim">
-        A cookout, a trip, a christening. Memories filed under one become a chapter in Movie
-        Mode.
+        Group related photos and videos. Event collections can also appear on the Board.
       </p>
 
       <form onSubmit={create} className="mb-8 flex flex-wrap gap-3">
@@ -323,14 +322,14 @@ export function EventManager({
               )}
             </a>
             <span className="shrink-0 text-sm text-paper-faint">
-              {event.media_count} {event.media_count === 1 ? 'memory' : 'memories'}
+              {event.media_count} {event.media_count === 1 ? 'item' : 'items'}
             </span>
           </li>
         ))}
       </ul>
       {list.length === 0 && (
         <p className="text-sm text-paper-faint">
-          No chapters yet. Create the first event when the next family day is worth gathering.
+          No albums or events yet.
         </p>
       )}
     </section>
@@ -389,10 +388,9 @@ export function MusicManager({ initial }: { initial: { id: string; title: string
   return (
     <section>
       <p className="eyebrow mb-3">Soundtrack</p>
-      <h2 className="mb-2 font-display text-title">Set the room&rsquo;s tone</h2>
+      <h2 className="mb-2 text-2xl font-semibold">Movie Mode audio</h2>
       <p className="mb-8 max-w-lg text-paper-dim">
-        What plays under Movie Mode. It ducks automatically when a video with its own sound
-        comes up, then swells back on the photos.
+        Audio plays under photos and lowers automatically when a video has sound.
       </p>
 
       <label className="btn btn-ghost mb-6 cursor-pointer">
@@ -430,7 +428,7 @@ export function MusicManager({ initial }: { initial: { id: string; title: string
       </ul>
       {tracks.length === 0 && (
         <p className="text-sm text-paper-faint">
-          Movie Mode works without music. Add a track whenever the archive needs a score.
+          No audio tracks added.
         </p>
       )}
     </section>

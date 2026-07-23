@@ -1,5 +1,7 @@
 'use client'
 
+import type { CropMetadata } from '@/lib/types'
+
 /**
  * Getting a phone's file ready to upload.
  *
@@ -22,8 +24,8 @@ export function classify(file: File): Kind {
   return VIDEO_EXTENSIONS.test(file.name) ? 'video' : 'photo'
 }
 
-export function isHeic(file: File): boolean {
-  return /image\/hei[cf]/i.test(file.type) || HEIC_EXTENSIONS.test(file.name)
+export function isHeic(file: Blob & { name?: string }): boolean {
+  return /image\/hei[cf]/i.test(file.type) || HEIC_EXTENSIONS.test(file.name ?? '')
 }
 
 /**
@@ -33,7 +35,7 @@ export function isHeic(file: File): boolean {
  * the common case, since HEIC comes off iPhones and usually gets uploaded from
  * one. Only when that fails do we pull in the (heavy) JS decoder.
  */
-async function decode(file: File): Promise<ImageBitmap> {
+async function decode(file: Blob): Promise<ImageBitmap> {
   try {
     return await createImageBitmap(file, { imageOrientation: 'from-image' })
   } catch (nativeError) {
@@ -49,21 +51,89 @@ async function decode(file: File): Promise<ImageBitmap> {
   }
 }
 
+function aspectValue(crop: CropMetadata, width: number, height: number): number {
+  const aspect = crop.aspect
+  if (aspect === '1:1') return 1
+  if (aspect === '4:3') return 4 / 3
+  if (aspect === '3:2') return 3 / 2
+  if (aspect === '16:9') return 16 / 9
+  if (aspect === '9:16') return 9 / 16
+  if (aspect === 'free' && crop.freeAspect && Number.isFinite(crop.freeAspect)) {
+    return clamp(crop.freeAspect, 0.4, 2.5)
+  }
+  return width / height
+}
+
+export const DEFAULT_CROP: CropMetadata = {
+  aspect: 'free',
+  zoom: 1,
+  x: 0,
+  y: 0,
+  rotation: 0,
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function normalizeCrop(crop?: CropMetadata | null): CropMetadata {
+  const rotation = crop?.rotation ?? 0
+  return {
+    aspect: crop?.aspect ?? 'free',
+    freeAspect: crop?.freeAspect && Number.isFinite(crop.freeAspect)
+      ? clamp(crop.freeAspect, 0.4, 2.5)
+      : undefined,
+    zoom: clamp(crop?.zoom ?? 1, 1, 3),
+    x: clamp(crop?.x ?? 0, -1, 1),
+    y: clamp(crop?.y ?? 0, -1, 1),
+    rotation: rotation === 90 || rotation === 180 || rotation === 270 ? rotation : 0,
+  }
+}
+
+/** Draws a crop into a derivative. The source bitmap is never altered. */
 async function encode(
   bitmap: ImageBitmap,
   maxEdge: number,
   quality: number,
+  cropInput?: CropMetadata | null,
 ): Promise<{ blob: Blob; width: number; height: number }> {
-  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
-  const width = Math.max(1, Math.round(bitmap.width * scale))
-  const height = Math.max(1, Math.round(bitmap.height * scale))
+  const crop = normalizeCrop(cropInput)
+  const quarterTurn = crop.rotation === 90 || crop.rotation === 270
+  const rotatedWidth = quarterTurn ? bitmap.height : bitmap.width
+  const rotatedHeight = quarterTurn ? bitmap.width : bitmap.height
+  const targetAspect = aspectValue(crop, rotatedWidth, rotatedHeight)
+
+  let cropWidth = rotatedWidth
+  let cropHeight = rotatedHeight
+  if (rotatedWidth / rotatedHeight > targetAspect) cropWidth = rotatedHeight * targetAspect
+  else cropHeight = rotatedWidth / targetAspect
+  cropWidth /= crop.zoom
+  cropHeight /= crop.zoom
+
+  const travelX = Math.max(0, rotatedWidth - cropWidth)
+  const travelY = Math.max(0, rotatedHeight - cropHeight)
+  const sourceX = travelX * ((crop.x + 1) / 2)
+  const sourceY = travelY * ((crop.y + 1) / 2)
+
+  const scale = Math.min(1, maxEdge / Math.max(cropWidth, cropHeight))
+  const width = Math.max(1, Math.round(cropWidth * scale))
+  const height = Math.max(1, Math.round(cropHeight * scale))
+
+  const rotated = document.createElement('canvas')
+  rotated.width = rotatedWidth
+  rotated.height = rotatedHeight
+  const rotatedContext = rotated.getContext('2d')
+  if (!rotatedContext) throw new Error('This browser could not prepare the photo.')
+  rotatedContext.translate(rotatedWidth / 2, rotatedHeight / 2)
+  rotatedContext.rotate((crop.rotation * Math.PI) / 180)
+  rotatedContext.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2)
 
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('This browser would not give us a canvas to work with.')
-  ctx.drawImage(bitmap, 0, 0, width, height)
+  ctx.drawImage(rotated, sourceX, sourceY, cropWidth, cropHeight, 0, 0, width, height)
 
   const blob = await new Promise<Blob | null>((resolve) => {
     // WebP is meaningfully smaller; Safari < 14 falls back to JPEG on its own
@@ -89,19 +159,45 @@ export interface PreparedPhoto {
   previewUrl: string
 }
 
-export async function preparePhoto(file: File): Promise<PreparedPhoto> {
+export async function preparePhoto(
+  file: File,
+  crop?: CropMetadata | null,
+): Promise<PreparedPhoto> {
   const bitmap = await decode(file)
   try {
     const [display, thumb] = await Promise.all([
-      encode(bitmap, 2560, 0.86),
-      encode(bitmap, 640, 0.72),
+      encode(bitmap, 2560, 0.86, crop),
+      encode(bitmap, 640, 0.72, crop),
     ])
     return {
       display: display.blob,
       thumb: thumb.blob,
-      width: bitmap.width,
-      height: bitmap.height,
+      width: display.width,
+      height: display.height,
       takenAt: (await exifTakenAt(file)) ?? new Date(file.lastModified),
+      previewUrl: URL.createObjectURL(thumb.blob),
+    }
+  } finally {
+    bitmap.close()
+  }
+}
+
+/** Used by the detail-page crop editor to rebuild display derivatives. */
+export async function preparePhotoBlob(
+  blob: Blob,
+  crop: CropMetadata,
+): Promise<Pick<PreparedPhoto, 'display' | 'thumb' | 'width' | 'height' | 'previewUrl'>> {
+  const bitmap = await decode(blob)
+  try {
+    const [display, thumb] = await Promise.all([
+      encode(bitmap, 2560, 0.86, crop),
+      encode(bitmap, 640, 0.72, crop),
+    ])
+    return {
+      display: display.blob,
+      thumb: thumb.blob,
+      width: display.width,
+      height: display.height,
       previewUrl: URL.createObjectURL(thumb.blob),
     }
   } finally {

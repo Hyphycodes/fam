@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { UploadQueue, type UploadContext, type UploadItem } from '@/lib/client/uploader'
 import { UploadDetailsSheet } from '@/components/UploadDetailsSheet'
 
@@ -37,14 +38,11 @@ export function AddMemoriesButton({
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState<File[] | null>(null)
-  // A public drop-off link has no session — the tag/event pickers need one, so
-  // that flow skips straight to uploading, exactly as it always has.
   const anonymous = Boolean(context?.linkToken)
 
   const pick = useCallback(() => {
-    if (anonymous) queue.setContext(context ?? {})
     input.current?.click()
-  }, [anonymous, context])
+  }, [])
 
   return (
     <>
@@ -60,19 +58,18 @@ export function AddMemoriesButton({
           const files = Array.from(event.target.files ?? [])
           event.target.value = ''
           if (files.length === 0) return
-          if (anonymous) queue.add(files)
-          else setPending(files)
+          setPending(files)
         }}
       />
 
       {pending && (
         <UploadDetailsSheet
-          fileCount={pending.length}
-          defaultEventId={context?.eventId}
+          initialFiles={pending}
+          context={context}
+          anonymous={anonymous}
           onCancel={() => setPending(null)}
-          onConfirm={(details) => {
-            queue.setContext({ ...(context ?? {}), details })
-            queue.add(pending)
+          onConfirm={(drafts, uploadContext) => {
+            queue.add(drafts, uploadContext)
             setPending(null)
           }}
         />
@@ -80,12 +77,12 @@ export function AddMemoriesButton({
 
       {variant === 'hero' ? (
         <button onClick={pick} className="btn btn-primary px-8 py-4 text-base">
-          Add memories
+          Add items
         </button>
       ) : (
         <button
           onClick={pick}
-          aria-label="Add memories"
+          aria-label="Add photos or videos"
           className="dock-add mx-0.5 flex h-[3.65rem] w-[3.65rem] flex-col items-center justify-center gap-0.5 rounded-full bg-white text-ink shadow-[0_8px_24px_-8px_rgba(0,0,0,0.9)] transition-transform hover:scale-[1.035] active:scale-95 sm:mx-1"
         >
           <svg
@@ -104,7 +101,7 @@ export function AddMemoriesButton({
         </button>
       )}
 
-      <UploadTray />
+      {(variant === 'nav' || anonymous) && <UploadTray />}
     </>
   )
 }
@@ -114,8 +111,7 @@ function UploadTray() {
   const router = useRouter()
   const previouslyBusy = useRef(false)
 
-  const busy = items.some((i) => i.status !== 'ready' && i.status !== 'error')
-  const allDone = items.length > 0 && !busy
+  const busy = items.some((i) => !['ready', 'duplicate', 'error'].includes(i.status))
   const anyFailed = items.some((i) => i.status === 'error')
 
   // Refresh the feed once the last upload lands, so the new memories are simply
@@ -126,14 +122,6 @@ function UploadTray() {
     }
     previouslyBusy.current = busy
   }, [busy, items, router])
-
-  // Tidy itself away once everything has landed. Failures stay put — they still
-  // want a retry.
-  useEffect(() => {
-    if (busy || anyFailed || items.length === 0) return
-    const timer = window.setTimeout(() => queue.clearFinished(), 3500)
-    return () => window.clearTimeout(timer)
-  }, [busy, anyFailed, items.length])
 
   // Warn before closing the tab mid-upload — losing a 2GB video to a stray
   // Cmd-W is a genuinely bad afternoon.
@@ -147,6 +135,14 @@ function UploadTray() {
   if (items.length === 0) return null
 
   const done = items.filter((i) => i.status === 'ready').length
+  const failed = items.filter((i) => i.status === 'error').length
+  const duplicates = items.filter((i) => i.status === 'duplicate').length
+  const photos = items.filter((i) => i.kind === 'photo' && i.status === 'ready').length
+  const videos = items.filter((i) => i.kind === 'video' && i.status === 'ready').length
+  const overall = items.length
+    ? Math.round(items.reduce((sum, item) => sum + item.progress, 0) / items.length * 100)
+    : 0
+  const albumId = items.find((item) => item.context.details?.eventId)?.context.details?.eventId
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center px-4 pb-[calc(5.75rem+env(safe-area-inset-bottom))] sm:pb-32">
@@ -154,22 +150,29 @@ function UploadTray() {
         className="pointer-events-auto w-full max-w-md overflow-hidden rounded-2xl border border-edge bg-ink-raised/95 shadow-2xl backdrop-blur-xl animate-rise"
         role="status"
         aria-live="polite"
-        aria-label={busy ? `Uploading memories, ${done} of ${items.length} complete` : 'Memory upload finished'}
+        aria-label={busy ? `Uploading items, ${done} of ${items.length} complete` : 'Upload finished'}
       >
         <div className="flex items-center justify-between px-5 pt-4 pb-3">
-          <p className="font-display text-xl">
+          <div>
+          <p className="text-lg font-semibold">
             {busy
-              ? 'Adding your memories…'
-              : allDone && done === items.length
-                ? 'All in.'
-                : 'Finished'}
+              ? `Uploading ${items.length} ${items.length === 1 ? 'item' : 'items'}`
+              : `${done} ${done === 1 ? 'item' : 'items'} added`}
           </p>
-          <button
-            onClick={() => queue.clearFinished({ includeErrors: !busy })}
-            className="text-sm text-paper-dim transition-colors hover:text-paper"
-          >
-            {busy ? `${done}/${items.length}` : 'Done'}
-          </button>
+          <p className="mt-0.5 text-xs text-paper-faint">
+            {busy ? `${overall}% overall` : `${photos} photos · ${videos} videos${failed ? ` · ${failed} failed` : ''}${duplicates ? ` · ${duplicates} already added` : ''}`}
+          </p>
+          </div>
+          {busy ? (
+            <span className="text-sm text-paper-dim">{done}/{items.length}</span>
+          ) : (
+            <button
+              onClick={() => queue.clearFinished({ includeErrors: true })}
+              className="text-sm text-paper-dim transition-colors hover:text-paper"
+            >
+              Close
+            </button>
+          )}
         </div>
 
         <ul className="max-h-72 space-y-1 overflow-y-auto px-3 pb-3">
@@ -177,6 +180,13 @@ function UploadTray() {
             <UploadRow key={item.id} item={item} />
           ))}
         </ul>
+        {!busy && (
+          <div className="flex flex-wrap gap-2 border-t border-edge px-5 py-3">
+            <Link href="/you" className="btn btn-ghost px-3 py-2 text-xs">View uploads</Link>
+            {albumId && <Link href={`/collection/event/${albumId}`} className="btn btn-ghost px-3 py-2 text-xs">Open album</Link>}
+            {anyFailed && <button type="button" onClick={() => items.filter((item) => item.status === 'error').forEach((item) => queue.retry(item.id))} className="btn btn-primary px-3 py-2 text-xs">Retry failed</button>}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -188,7 +198,9 @@ function UploadRow({ item }: { item: UploadItem }) {
   return (
     <li className="flex items-center gap-3 rounded-xl px-2 py-2">
       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-ink-high">
-        {item.previewUrl ? (
+        {item.previewUrl && item.kind === 'video' ? (
+          <video src={item.previewUrl} muted preload="metadata" className="h-full w-full object-cover" />
+        ) : item.previewUrl ? (
           <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
         ) : (
           <div className="h-full w-full animate-sweep" />
@@ -204,13 +216,13 @@ function UploadRow({ item }: { item: UploadItem }) {
           {item.status === 'error' ? (
             <span className="text-ember-soft">{item.error}</span>
           ) : item.status === 'preparing' ? (
-            'Getting it ready…'
+            'Preparing'
           ) : item.status === 'uploading' ? (
             `${percent}%`
           ) : item.status === 'processing' ? (
-            <span className="animate-breathe">
-              Cloudflare is making this play everywhere…
-            </span>
+            <span className="animate-breathe">Processing video</span>
+          ) : item.status === 'duplicate' ? (
+            'Already added'
           ) : (
             'Added'
           )}

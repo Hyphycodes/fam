@@ -38,8 +38,7 @@ export function PublicDropOff({
             className="mt-10 space-y-4"
           >
             <p className="text-lg text-paper-soft text-balance">
-              Whatever you took that day — photos, videos, all of it. Just so everyone knows
-              who to thank:
+              Enter your name before selecting photos or videos.
             </p>
             <input
               value={name}
@@ -56,8 +55,7 @@ export function PublicDropOff({
         ) : (
           <div className="mt-10 animate-rise">
             <p className="text-lg text-paper-soft text-balance">
-              Thanks, {name.trim()}. Pick everything you want to add — as many as you like,
-              and big videos are fine.
+              Select the photos and videos you want to add, then review them before uploading.
             </p>
             <div className="mt-8">
               <AddMemoriesButton
@@ -66,8 +64,7 @@ export function PublicDropOff({
               />
             </div>
             <p className="mt-8 text-sm leading-relaxed text-paper-faint">
-              You can close this page once they&rsquo;ve finished uploading. They go straight
-              to the family — nothing is posted anywhere public.
+              Keep this page open until uploading finishes. This link only adds to {eventName}.
             </p>
           </div>
         )}

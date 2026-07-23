@@ -34,14 +34,14 @@ export default async function SettingsPage() {
   return (
     <Shell viewer={viewer}>
       <header className="mt-8 mb-10 max-w-3xl sm:mt-14 sm:mb-14">
-        <p className="eyebrow">Keep the archive growing</p>
+        <p className="eyebrow">Settings</p>
         <h1 className="mt-3 text-[clamp(2.5rem,8vw,4.25rem)] font-semibold leading-[0.95] tracking-[-0.035em] text-balance">
-          {isOwner ? 'The family room' : viewer.display_name}
+          {isOwner ? 'Manage Reel' : viewer.display_name}
         </h1>
         <p className="mt-5 max-w-xl leading-relaxed text-paper-dim">
           {isOwner
-            ? 'Invite the people who belong here, shape memories into chapters, and choose how the archive sounds when it becomes a film.'
-            : 'The shared events, soundtrack, and account details behind your family archive.'}
+            ? 'Manage family access, albums, upload links, and Movie Mode audio.'
+            : 'View shared albums, Movie Mode audio, and account details.'}
         </p>
       </header>
 
@@ -73,7 +73,7 @@ export default async function SettingsPage() {
 
         <section id="account" className="settings-panel scroll-mt-28">
           <p className="eyebrow mb-3">Account</p>
-          <h2 className="text-2xl font-semibold tracking-[-0.02em]">Your seat in the archive</h2>
+          <h2 className="text-2xl font-semibold tracking-[-0.02em]">Your account</h2>
           <p className="mt-3 break-words text-paper-dim">
             Signed in as {viewer.display_name}
           </p>

@@ -8,8 +8,7 @@ export default function OfflinePage() {
           No signal right now.
         </h1>
         <p className="mt-4 leading-relaxed text-paper-soft">
-          Anything you&rsquo;ve already looked at is still here. New memories will show up
-          when you&rsquo;re back online.
+          Previously loaded pages may still be available. New items require a connection.
         </p>
         {/* A real navigation, not a client-side one: the point is to retry the
             network from scratch once signal is back. */}

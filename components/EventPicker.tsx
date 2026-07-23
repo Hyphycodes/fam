@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { EventRow } from '@/lib/types'
 
 const NEW_EVENT = '__new__'
@@ -19,7 +19,7 @@ export function EventPicker({
   value: string
   onChange: (eventId: string) => void
 }) {
-  const [list, setList] = useState(events)
+  const [createdEvents, setCreatedEvents] = useState<EventRow[]>([])
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [date, setDate] = useState('')
@@ -28,6 +28,11 @@ export function EventPicker({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+
+  const list = useMemo(() => {
+    const incoming = new Set(events.map((event) => event.id))
+    return [...events, ...createdEvents.filter((event) => !incoming.has(event.id))]
+  }, [createdEvents, events])
 
   function pickFlyer(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -71,7 +76,7 @@ export function EventPicker({
         created_by_member: null,
         flyer_path: null,
       }
-      setList((current) => [created, ...current])
+      setCreatedEvents((current) => [created, ...current])
       onChange(created.id)
       setCreating(false)
       setName('')

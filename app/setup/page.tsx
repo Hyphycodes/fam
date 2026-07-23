@@ -11,7 +11,7 @@ const EXPLAIN: Record<string, { title: string; why: string; where: string }> = {
   },
   stream: {
     title: 'Cloudflare Stream',
-    why: 'Holds the videos and converts whatever the family films into something that plays everywhere.',
+    why: 'Stores videos and creates browser-compatible playback versions.',
     where: 'Cloudflare dashboard → Stream, and My Profile → API Tokens',
   },
   r2: {

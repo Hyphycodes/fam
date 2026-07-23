@@ -19,10 +19,17 @@ const migrationsDir = path.join(root, 'supabase', 'migrations')
 
 const SUPABASE_STUBS = `
   create schema if not exists auth;
+  create schema if not exists storage;
 
   create table if not exists auth.users (
     id    uuid primary key default gen_random_uuid(),
     email text unique
+  );
+
+  create table if not exists storage.buckets (
+    id     text primary key,
+    name   text unique not null,
+    public boolean not null default false
   );
 
   -- In Supabase this reads the JWT. Here it reads a session GUC so the RLS
@@ -85,6 +92,7 @@ console.log('\nSchema behaviour')
 const expectedTables = [
   'profiles', 'allowed_emails', 'events', 'media', 'reactions', 'comments',
   'voice_notes', 'people', 'media_people', 'event_upload_links', 'music_tracks',
+  'members', 'member_sessions',
 ]
 const { rows: tables } = await db.query(
   `select table_name from information_schema.tables where table_schema = 'public'`,
@@ -117,10 +125,11 @@ await db.exec(`insert into public.allowed_emails (email, role, display_name)
 await db.exec(`insert into auth.users (id, email) values
   ('11111111-1111-1111-1111-111111111111', 'owner@example.com')`)
 
-await db.exec(`insert into public.media (id, uploader_id, type, r2_key, taken_at, status)
+await db.exec(`insert into public.media (id, uploader_id, type, r2_key, taken_at, status, content_hash)
   values ('22222222-2222-2222-2222-222222222222',
           '11111111-1111-1111-1111-111111111111',
-          'photo', 'originals/x.jpg', '2019-07-04T18:30:00Z', 'ready')`)
+          'photo', 'originals/x.jpg', '2019-07-04T18:30:00Z', 'ready',
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')`)
 
 const { rows: gen } = await db.query(
   `select taken_month, taken_day, taken_year from public.media
@@ -225,11 +234,12 @@ await db.exec(`
   update public.media
      set uploader_id = '${cousinId}',
          r2_display_key = 'music/2024/01/some-track.mp3',
-         stream_uid = 'stolen'
+         stream_uid = 'stolen',
+         content_hash = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
    where id = '22222222-2222-2222-2222-222222222222'`)
 
 const { rows: media } = await db.query(
-  `select uploader_id, r2_display_key, stream_uid from public.media
+  `select uploader_id, r2_display_key, stream_uid, content_hash from public.media
     where id = '22222222-2222-2222-2222-222222222222'`,
 )
 if (media[0].uploader_id === '11111111-1111-1111-1111-111111111111') {
@@ -241,6 +251,20 @@ if (media[0].r2_display_key === null && media[0].stream_uid === null) {
   pass('Storage pointers cannot be repointed at other objects')
 } else {
   fail(`Storage pointers were rewritten: ${JSON.stringify(media[0])}`)
+}
+if (media[0].content_hash === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
+  pass('The original content hash cannot be rewritten')
+} else {
+  fail('content_hash was rewritten — duplicate protection can be bypassed')
+}
+
+try {
+  await db.exec(`insert into public.media (type, r2_key, content_hash)
+    values ('photo', 'originals/duplicate.jpg',
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')`)
+  fail('Duplicate content hashes were allowed')
+} catch {
+  pass('Duplicate content hashes cannot create a second media row')
 }
 
 // Captions and stars still have to be editable, or the app does nothing.

@@ -2,8 +2,11 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Shell } from '@/components/Shell'
 import { ProfileEditor } from '@/components/ProfileEditor'
+import { MediaTile, Rail } from '@/components/Rail'
 import { requireViewer } from '@/lib/viewer'
 import { appName, isConfigured } from '@/lib/env'
+import { getFeed } from '@/lib/queries'
+import { readDb } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +15,11 @@ export default async function YouPage() {
   if (!isConfigured('supabase')) redirect('/setup')
 
   const viewer = await requireViewer()
+  const uploads = await getFeed(readDb(), {
+    limit: 36,
+    uploaderMemberId: viewer.memberId,
+    uploaderId: viewer.kind === 'legacy' ? viewer.id : null,
+  })
 
   return (
     <Shell viewer={viewer}>
@@ -41,6 +49,14 @@ export default async function YouPage() {
           </button>
         </form>
       </div>
+
+      {uploads.length > 0 && (
+        <div className="mt-12">
+          <Rail title="Your uploads">
+            {uploads.map((item) => <MediaTile key={item.id} media={item} />)}
+          </Rail>
+        </div>
+      )}
     </Shell>
   )
 }

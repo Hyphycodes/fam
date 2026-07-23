@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { CoverTile, MediaTile, PosterTile, Rail } from '@/components/Rail'
+import { CoverTile, MediaTile, Rail } from '@/components/Rail'
 import { Shell } from '@/components/Shell'
 import { VideoFrame } from '@/components/VideoFrame'
 import { AddMemoriesButton } from '@/components/AddMemories'
@@ -14,9 +14,7 @@ import {
   getBrowseCovers,
   getEvents,
   getFeed,
-  getNewThisWeek,
   getOnThisDay,
-  getPeople,
   getYears,
 } from '@/lib/queries'
 import { reconcileProcessingVideos } from '@/lib/reconcile'
@@ -36,18 +34,22 @@ export default async function HomePage() {
   // without this, a transcoded video could sit invisible forever.
   await reconcileProcessingVideos()
 
-  const [recent, newThisWeek, onThisDay, favorites, people, events, years, activity] =
+  const lastYear = new Date().getFullYear() - 1
+  const [archive, recent, onThisDay, favorites, events, years, activity, videos, photos, lastYearItems] =
     await Promise.all([
-      getFeed(db, { limit: 18 }),
-      getNewThisWeek(db),
+      getFeed(db, { limit: 36 }),
+      getFeed(db, { limit: 14 }),
       getOnThisDay(db),
       getFeed(db, { favorite: true, limit: 18 }),
-      getPeople(db),
       getEvents(db),
       getYears(db),
       getRecentActivity(db, 10),
+      getFeed(db, { mediaType: 'video', limit: 18 }),
+      getFeed(db, { mediaType: 'photo', limit: 18 }),
+      getFeed(db, { year: lastYear, limit: 18, order: 'taken' }),
     ])
-  const covers = await getBrowseCovers(db, { people, events, years })
+  const albums = events.filter((event) => event.media_count > 0).slice(0, 12)
+  const covers = await getBrowseCovers(db, { people: [], events: albums, years })
 
   // The billboard: today's pick from the favorites, or the newest memory.
   // Day-of-year keeps it stable for the day and fresh tomorrow.
@@ -55,6 +57,21 @@ export default async function HomePage() {
     (m) => m.display_url || m.thumb_url,
   )
   const hero = heroPool.length > 0 ? heroPool[dailyIndex(heroPool.length)] : null
+  const used = new Set(recent.map((item) => item.id))
+  const takeUnused = (items: MediaView[], limit = 14) => {
+    const next = items.filter((item) => !used.has(item.id)).slice(0, limit)
+    next.forEach((item) => used.add(item.id))
+    return next
+  }
+  const todayItems = takeUnused(onThisDay)
+  const videoItems = takeUnused(videos)
+  const photoItems = takeUnused(photos)
+  const favoriteItems = takeUnused(favorites)
+  const lastYearRow = takeUnused(lastYearItems)
+  const shuffledArchive = archive.length
+    ? [...archive.slice(dailyIndex(archive.length)), ...archive.slice(0, dailyIndex(archive.length))]
+    : []
+  const shuffled = takeUnused(shuffledArchive, 16)
 
   return (
     <Shell viewer={viewer} immersive={Boolean(hero)}>
@@ -64,39 +81,69 @@ export default async function HomePage() {
         <FirstTime name={viewer.display_name} />
       ) : (
         <div className="mt-10 flex flex-col gap-9 sm:mt-12 sm:gap-11">
-          {activity.length > 0 && <ActivityStrip items={activity} />}
-
-          {newThisWeek.length > 0 && (
-            <Rail title="New this week">
-              {newThisWeek.map((m) => (
-                <MediaTile key={m.id} media={m} />
-              ))}
-            </Rail>
-          )}
-
           <Rail title="Recently added" href="/browse">
             {recent.map((m) => (
               <MediaTile key={m.id} media={m} />
             ))}
           </Rail>
 
-          {onThisDay.length > 0 && (
-            <Rail title={onThisDayTitle(onThisDay[0].taken_at)}>
-              {onThisDay.map((m) => (
+          {activity.length > 0 && <ActivityStrip items={activity} />}
+
+          {albums.length > 0 && (
+            <Rail title="Albums" href="/browse">
+              {albums.map((album) => (
+                <CoverTile
+                  key={album.id}
+                  href={`/collection/event/${album.id}`}
+                  label={album.name}
+                  sublabel={album.event_date ? fullDate(album.event_date) : `${album.media_count} items`}
+                  cover={covers.events.get(album.id)}
+                />
+              ))}
+            </Rail>
+          )}
+
+          {videoItems.length > 0 && (
+            <Rail title="Videos">
+              {videoItems.map((m) => (
                 <MediaTile key={m.id} media={m} />
               ))}
+            </Rail>
+          )}
+
+          {photoItems.length > 0 && (
+            <Rail title="Photos">
+              {photoItems.map((m) => <MediaTile key={m.id} media={m} />)}
+            </Rail>
+          )}
+
+          {favoriteItems.length > 0 && (
+            <Rail title="Favorites">
+              {favoriteItems.map((m) => (
+                <MediaTile key={m.id} media={m} />
+              ))}
+            </Rail>
+          )}
+
+          {todayItems.length > 0 && (
+            <Rail title={onThisDayTitle(todayItems[0].taken_at)}>
+              {todayItems.map((m) => <MediaTile key={m.id} media={m} />)}
+            </Rail>
+          )}
+
+          {lastYearRow.length > 0 && (
+            <Rail title={String(lastYear)}>
+              {lastYearRow.map((m) => <MediaTile key={m.id} media={m} />)}
+            </Rail>
+          )}
+
+          {shuffled.length > 0 && (
+            <Rail title="Shuffle">
+              {shuffled.map((m) => <MediaTile key={m.id} media={m} />)}
             </Rail>
           )}
 
           <MovieModeCard backdrop={heroPool[1] ?? recent[0]} />
-
-          {favorites.length > 0 && (
-            <Rail title="Favorites">
-              {favorites.map((m) => (
-                <MediaTile key={m.id} media={m} />
-              ))}
-            </Rail>
-          )}
 
           {years.length > 1 && (
             <Rail title="By year" href="/browse">
@@ -105,40 +152,13 @@ export default async function HomePage() {
                   key={entry.year}
                   href={`/collection/year/${entry.year}`}
                   label={String(entry.year)}
-                  sublabel={`${entry.count} ${entry.count === 1 ? 'memory' : 'memories'}`}
+                  sublabel={`${entry.count} ${entry.count === 1 ? 'item' : 'items'}`}
                   cover={covers.years.get(entry.year)}
                 />
               ))}
             </Rail>
           )}
 
-          {people.length > 0 && (
-            <Rail title="People" href="/browse">
-              {people.map((person) => (
-                <PosterTile
-                  key={person.id}
-                  href={`/collection/person/${person.id}`}
-                  label={person.name}
-                  count={person.media_count}
-                  cover={covers.people.get(person.id)}
-                />
-              ))}
-            </Rail>
-          )}
-
-          {events.length > 0 && (
-            <Rail title="Events" href="/browse">
-              {events.map((event) => (
-                <CoverTile
-                  key={event.id}
-                  href={`/collection/event/${event.id}`}
-                  label={event.name}
-                  sublabel={event.event_date ? fullDate(event.event_date) : undefined}
-                  cover={covers.events.get(event.id)}
-                />
-              ))}
-            </Rail>
-          )}
         </div>
       )}
     </Shell>
@@ -183,7 +203,7 @@ function Billboard({ media }: { media: MediaView }) {
         <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-ink via-ink/45 to-transparent" />
 
         <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-5xl px-5 pb-8 sm:px-6 sm:pb-12">
-          <p className="eyebrow animate-rise">Featured memory</p>
+          <p className="eyebrow animate-rise">Featured</p>
           <h1
             className="mt-2 max-w-2xl text-[clamp(1.85rem,5.5vw,3.25rem)] leading-[1.05] font-semibold tracking-[-0.025em] text-white text-balance animate-rise"
             style={{ animationDelay: '60ms' }}
@@ -223,7 +243,7 @@ function Billboard({ media }: { media: MediaView }) {
             style={{ animationDelay: '180ms' }}
           >
             <Link href={`/m/${media.id}`} className="btn btn-primary">
-              <PlayGlyph /> Play
+              <PlayGlyph /> {media.type === 'video' ? 'Play' : 'View'}
             </Link>
             <Link href="/movie" className="btn btn-ghost backdrop-blur-sm">
               Movie Mode
@@ -255,7 +275,7 @@ function MovieModeCard({ backdrop }: { backdrop?: MediaView }) {
           Movie Mode
         </span>
         <span className="text-[0.8125rem] text-white/60">
-          The whole archive, cut together for the big screen
+          Play photos and videos continuously
         </span>
       </span>
     </Link>
@@ -281,11 +301,10 @@ function FirstTime({ name }: { name: string }) {
   return (
     <div className="mx-auto max-w-md py-24 text-center animate-rise sm:py-32">
       <h1 className="text-3xl font-semibold tracking-[-0.02em] text-balance sm:text-4xl">
-        Nothing here yet, {name}.
+        No items yet, {name}.
       </h1>
       <p className="mt-4 text-[0.9375rem] leading-relaxed text-paper-dim text-balance">
-        Add the first one — a photo, an old video, something from your camera roll you
-        keep meaning to show everyone. It plays for the whole family the moment it lands.
+        Add photos or videos to get started.
       </p>
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
         <AddMemoriesButton variant="hero" />

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PersonTagPicker, type TagChip } from '@/components/PersonTagPicker'
 import { EventPicker } from '@/components/EventPicker'
+import { PhotoRecropButton } from '@/components/PhotoRecropButton'
 import type { EventRow, MediaView } from '@/lib/types'
 
 /**
@@ -29,6 +30,8 @@ export function MemoryEditor({
     media.people.map((p) => ({ name: p.name, memberId: p.member_id, avatarUrl: p.avatar_url })),
   )
   const [favorite, setFavorite] = useState(media.favorite)
+  const [takenAt, setTakenAt] = useState(media.taken_at.slice(0, 10))
+  const [location, setLocation] = useState(media.location_text ?? '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -43,6 +46,8 @@ export function MemoryEditor({
           caption,
           eventId: eventId || null,
           favorite,
+          takenAt: takenAt ? new Date(`${takenAt}T12:00:00`).toISOString() : undefined,
+          location,
           people: people.map((p) => p.name),
         }),
       })
@@ -56,7 +61,7 @@ export function MemoryEditor({
   }
 
   async function remove() {
-    if (!confirm('Remove this memory for everyone? This cannot be undone.')) return
+    if (!confirm('Delete this item for everyone? This cannot be undone.')) return
     const response = await fetch(`/api/media/${media.id}`, { method: 'DELETE' })
     if (response.ok) router.push('/')
   }
@@ -83,8 +88,19 @@ export function MemoryEditor({
               : 'border-edge text-paper-dim hover:bg-ink-hover'
           }`}
         >
-          {favorite ? '★ One of the good ones' : '☆ Mark as funny/favourite'}
+          {favorite ? '★ Favorited' : '☆ Add to favorites'}
         </button>
+
+        {media.type === 'photo' && media.display_url && media.download_url && canDelete && (
+          <PhotoRecropButton
+            mediaId={media.id}
+            sourceUrl={media.display_url}
+            originalUrl={media.download_url}
+            filename={media.original_filename ?? 'photo'}
+            mimeType={media.mime_type}
+            initial={media.crop_metadata}
+          />
+        )}
 
         <button
           onClick={() => setOpen((value) => !value)}
@@ -109,6 +125,17 @@ export function MemoryEditor({
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs tracking-[0.2em] text-paper-faint uppercase">
+              Date
+              <input type="date" value={takenAt} onChange={(event) => setTakenAt(event.target.value)} className="field mt-2 tracking-normal normal-case" />
+            </label>
+            <label className="text-xs tracking-[0.2em] text-paper-faint uppercase">
+              Location
+              <input value={location} onChange={(event) => setLocation(event.target.value)} className="field mt-2 tracking-normal normal-case" placeholder="Optional" />
+            </label>
+          </div>
+
           <div>
             <label className="mb-2 block text-xs tracking-[0.2em] text-paper-faint uppercase">
               Who&rsquo;s in it
@@ -121,7 +148,7 @@ export function MemoryEditor({
 
           <div>
             <label className="mb-2 block text-xs tracking-[0.2em] text-paper-faint uppercase">
-              Event
+              Album or event
             </label>
             <EventPicker events={events} value={eventId} onChange={setEventId} />
           </div>
@@ -135,7 +162,7 @@ export function MemoryEditor({
                 onClick={remove}
                 className="text-sm text-paper-faint transition-colors hover:text-paper"
               >
-                Remove this memory
+                Delete item
               </button>
             )}
           </div>

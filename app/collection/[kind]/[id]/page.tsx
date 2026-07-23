@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { Feed } from '@/components/Feed'
+import { MediaTile, Rail } from '@/components/Rail'
 import { Shell } from '@/components/Shell'
 import { AddMemoriesButton } from '@/components/AddMemories'
 import { requireViewer } from '@/lib/viewer'
@@ -31,6 +32,7 @@ export default async function CollectionPage({
   let title = ''
   let subtitle: string | null = null
   let query = ''
+  let person: { name: string; member_id: string | null; profile_id: string | null } | null = null
 
   if (kind === 'event') {
     const { data } = await db.from('events').select('name, event_date').eq('id', id).maybeSingle()
@@ -39,9 +41,10 @@ export default async function CollectionPage({
     subtitle = data.event_date ? fullDate(data.event_date) : null
     query = `event=${id}`
   } else if (kind === 'person') {
-    const { data } = await db.from('people').select('name').eq('id', id).maybeSingle()
+    const { data } = await db.from('people').select('name, member_id, profile_id').eq('id', id).maybeSingle()
     if (!data) notFound()
     title = data.name
+    person = data
     query = `person=${id}`
   } else {
     const year = Number(id)
@@ -50,12 +53,36 @@ export default async function CollectionPage({
     query = `year=${year}`
   }
 
-  const media = await getFeed(db, {
-    limit: 12,
-    eventId: kind === 'event' ? id : null,
-    personId: kind === 'person' ? id : null,
-    year: kind === 'year' ? Number(id) : null,
-  })
+  // Older free-text person rows may predate the member/profile link. Resolve
+  // an exact display-name match at read time so "Added by" still has the
+  // correct uploader meaning without rewriting historical tags.
+  if (kind === 'person' && person && !person.member_id && !person.profile_id) {
+    const [{ data: members }, { data: profiles }] = await Promise.all([
+      db.from('members').select('id').ilike('display_name', person.name).limit(1),
+      db.from('profiles').select('id').ilike('display_name', person.name).limit(1),
+    ])
+    person = {
+      ...person,
+      member_id: members?.[0]?.id ?? null,
+      profile_id: members?.[0] ? null : (profiles?.[0]?.id ?? null),
+    }
+  }
+
+  const [media, addedBy] = await Promise.all([
+    getFeed(db, {
+      limit: kind === 'person' ? 60 : 12,
+      eventId: kind === 'event' ? id : null,
+      personId: kind === 'person' ? id : null,
+      year: kind === 'year' ? Number(id) : null,
+    }),
+    kind === 'person' && person && (person.member_id || person.profile_id)
+      ? getFeed(db, {
+          limit: 60,
+          uploaderMemberId: person.member_id,
+          uploaderId: person.member_id ? null : person.profile_id,
+        })
+      : Promise.resolve([]),
+  ])
 
   return (
     <Shell viewer={viewer}>
@@ -72,24 +99,42 @@ export default async function CollectionPage({
         {subtitle && <p className="mt-3 text-paper-dim">{subtitle}</p>}
       </header>
 
-      <Feed
-        initial={media}
-        initialCursor={media.length ? media[media.length - 1].created_at : null}
-        query={query}
-        emptyState={
-          <div className="py-10">
-            <p className="max-w-md text-lg leading-relaxed text-paper-soft text-balance">
-              Nothing filed under {title} yet.
-            </p>
-            <div className="mt-8">
-              <AddMemoriesButton
-                variant="hero"
-                context={{ eventId: kind === 'event' ? id : null }}
-              />
+      {kind === 'person' ? (
+        <div className="flex flex-col gap-12">
+          {media.length > 0 && (
+            <Rail title={`Featuring ${title}`}>
+              {media.map((item) => <MediaTile key={item.id} media={item} />)}
+            </Rail>
+          )}
+          {addedBy.length > 0 && (
+            <Rail title={`Added by ${title}`}>
+              {addedBy.map((item) => <MediaTile key={item.id} media={item} />)}
+            </Rail>
+          )}
+          {media.length === 0 && addedBy.length === 0 && (
+            <p className="py-10 text-paper-dim">No items for {title} yet.</p>
+          )}
+        </div>
+      ) : (
+        <Feed
+          initial={media}
+          initialCursor={media.length ? media[media.length - 1].created_at : null}
+          query={query}
+          emptyState={
+            <div className="py-10">
+              <p className="max-w-md text-lg leading-relaxed text-paper-soft text-balance">
+                No items here yet.
+              </p>
+              <div className="mt-8">
+                <AddMemoriesButton
+                  variant="hero"
+                  context={{ eventId: kind === 'event' ? id : null }}
+                />
+              </div>
             </div>
-          </div>
-        }
-      />
+          }
+        />
+      )}
     </Shell>
   )
 }

@@ -133,7 +133,7 @@ export function Feed({
       {loadError && (
         <div className="mt-12 rounded-xl border border-edge bg-ink-raised px-5 py-4 sm:flex sm:items-center sm:justify-between sm:gap-6">
           <p className="text-sm leading-relaxed text-paper-dim">
-            The next page did not come through. Your place in the archive is safe.
+            The next page did not load.
           </p>
           <button
             type="button"
@@ -147,7 +147,7 @@ export function Feed({
 
       {!cursor && items.length > 8 && (
         <p className="mt-24 text-center text-sm text-paper-faint">
-          That&rsquo;s everything, all the way back.
+          End of results
         </p>
       )}
 

@@ -26,11 +26,10 @@ export default async function EnterPage({
           {appName}
         </p>
         <h1 className="text-[clamp(2.75rem,10vw,4rem)] leading-[0.95] font-semibold tracking-[-0.03em] text-balance">
-          Come on in.
+          Sign in
         </h1>
         <p className="mt-5 text-lg text-paper-soft text-balance">
-          Everyone&rsquo;s memories, in one place. Your name and the family passcode is all
-          it takes.
+          Enter your name and the family passcode.
         </p>
 
         {hasFamilyPasscode() ? (

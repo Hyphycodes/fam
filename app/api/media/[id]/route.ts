@@ -4,6 +4,8 @@ import { getMediaById } from '@/lib/queries'
 import { readDb } from '@/lib/db'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { deleteVideo } from '@/lib/stream'
+import { deleteObjects } from '@/lib/r2'
+import { isConfigured } from '@/lib/env'
 
 export async function GET(
   _request: Request,
@@ -13,7 +15,7 @@ export async function GET(
     if (!(await getActor())) return fail('Not signed in.', 401)
     const { id } = await params
     const media = await getMediaById(readDb(), id)
-    if (!media) return fail('That memory is not here.', 404)
+    if (!media) return fail('That item is not available.', 404)
     return ok({ media })
   } catch (error) {
     return handleError(error, 'media')
@@ -25,6 +27,7 @@ interface Patch {
   favorite?: boolean
   eventId?: string | null
   takenAt?: string
+  location?: string | null
   people?: string[]
 }
 
@@ -45,6 +48,7 @@ export async function PATCH(
     if ('caption' in body) changes.caption = (body.caption ?? '').trim().slice(0, 2000) || null
     if ('favorite' in body) changes.favorite = Boolean(body.favorite)
     if ('eventId' in body) changes.event_id = body.eventId || null
+    if ('location' in body) changes.location_text = (body.location ?? '').trim().slice(0, 200) || null
     if (body.takenAt) {
       const date = new Date(body.takenAt)
       if (!Number.isNaN(date.getTime())) changes.taken_at = date.toISOString()
@@ -57,7 +61,14 @@ export async function PATCH(
 
     // People are replaced wholesale — the editor always sends the full list.
     if (Array.isArray(body.people)) {
-      const names = [...new Set(body.people.map((n) => n.trim()).filter(Boolean))].slice(0, 30)
+      const names = [
+        ...new Map(
+          body.people
+            .map((name) => name.trim())
+            .filter(Boolean)
+            .map((name) => [name.toLocaleLowerCase(), name]),
+        ).values(),
+      ].slice(0, 30)
 
       const personIds: string[] = []
       for (const name of names) {
@@ -88,7 +99,7 @@ export async function PATCH(
             linkedMember = member[0].id
           }
         }
-        personIds.push(personId)
+        if (!personIds.includes(personId)) personIds.push(personId)
       }
 
       const { error: untagError } = await db.from('media_people').delete().eq('media_id', id)
@@ -109,7 +120,7 @@ export async function PATCH(
   }
 }
 
-/** Removes the row, and the video behind it. R2 objects are left in place. */
+/** Removes the row and then best-effort deletes its storage objects. */
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -123,11 +134,11 @@ export async function DELETE(
 
     const { data: media } = await db
       .from('media')
-      .select('id, uploader_id, uploader_member, stream_uid')
+      .select('id, uploader_id, uploader_member, stream_uid, r2_key, r2_display_key, r2_thumb_key')
       .eq('id', id)
       .maybeSingle()
 
-    if (!media) return fail('That memory is not here.', 404)
+    if (!media) return fail('That item is not available.', 404)
     const mine = actor.memberId
       ? media.uploader_member === actor.memberId
       : media.uploader_id === actor.userId
@@ -145,6 +156,14 @@ export async function DELETE(
         await deleteVideo(media.stream_uid)
       } catch (streamError) {
         console.error('[reel] could not delete Stream video', media.stream_uid, streamError)
+      }
+    }
+
+    if (isConfigured('r2')) {
+      try {
+        await deleteObjects([media.r2_key, media.r2_display_key, media.r2_thumb_key])
+      } catch (storageError) {
+        console.error('[reel] could not delete R2 media objects', id, storageError)
       }
     }
 

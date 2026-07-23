@@ -117,7 +117,7 @@ export function NameEntry({ names, next }: { names: NameOption[]; next?: string 
         disabled={state === 'checking' || !firstName || !passcode}
         className="btn btn-primary w-full py-3.5"
       >
-        {state === 'checking' ? 'One moment…' : 'Come in'}
+        {state === 'checking' ? 'Checking…' : 'Continue'}
       </button>
 
       {error && <p className="pt-1 text-sm text-paper-soft">{error}</p>}

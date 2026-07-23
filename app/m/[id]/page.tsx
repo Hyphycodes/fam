@@ -77,16 +77,22 @@ export default async function MemoryPage({
               {media.caption}
             </h1>
           )}
-          <div className={`flex flex-wrap items-center gap-x-1.5 text-paper-dim ${media.caption ? 'mt-3' : ''}`}>
+          <div className={`flex flex-wrap items-center gap-x-1.5 text-sm text-paper-dim ${media.caption ? 'mt-3' : ''}`}>
             <Avatar name={media.uploader_name} src={media.uploader_avatar_url} size={24} />
-            <span className="text-paper-soft">{media.uploader_name}</span>
+            <span>Added by <span className="text-paper-soft">{media.uploader_name}</span></span>
             <span className="text-paper-faint">·</span>
             {fullDate(media.taken_at)}
+            {media.location_text && (
+              <>
+                <span className="text-paper-faint">·</span>
+                {media.location_text}
+              </>
+            )}
             {media.event_name && media.event_id && (
               <>
                 <span className="text-paper-faint">·</span>
                 <Link
-                  href={`/community/${media.event_id}`}
+                  href={`/collection/event/${media.event_id}`}
                   className="transition-colors hover:text-paper"
                 >
                   {media.event_name}
@@ -143,12 +149,9 @@ function Processing() {
   return (
     <div className="grid aspect-video place-items-center px-8 text-center">
       <div>
-        <p className="font-display text-3xl text-paper animate-breathe">
-          Still coming through
-        </p>
+        <p className="text-2xl font-semibold text-paper animate-breathe">Processing video</p>
         <p className="mt-3 max-w-sm text-sm leading-relaxed text-paper-dim">
-          Cloudflare is converting this so it plays on every phone, laptop and TV in the
-          family. Big videos can take a few minutes. It will appear on its own.
+          This can take a few minutes. The page will update when processing finishes.
         </p>
       </div>
     </div>
@@ -159,7 +162,7 @@ function Broken({ reason }: { reason: string | null }) {
   return (
     <div className="grid aspect-video place-items-center px-8 text-center">
       <div>
-        <p className="font-display text-3xl text-paper">This one didn&rsquo;t make it</p>
+        <p className="text-2xl font-semibold text-paper">Processing failed</p>
         <p className="mt-3 max-w-sm text-sm leading-relaxed text-paper-dim">
           {reason ?? 'The file could not be read.'} Try adding it again — if it keeps
           failing, the original may be damaged.

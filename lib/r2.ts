@@ -2,6 +2,7 @@ import 'server-only'
 
 import {
   GetObjectCommand,
+  DeleteObjectCommand,
   HeadBucketCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -133,6 +134,15 @@ export function presignGet(
         : {}),
     }),
     { expiresIn: opts.expiresIn ?? 60 * 60 * 12 },
+  )
+}
+
+/** Best-effort cleanup after an authorized media delete. */
+export async function deleteObjects(keys: (string | null | undefined)[]): Promise<void> {
+  await Promise.all(
+    keys.filter((key): key is string => Boolean(key)).map((key) =>
+      s3().send(new DeleteObjectCommand({ Bucket: bucket(), Key: key })),
+    ),
   )
 }
 
