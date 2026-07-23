@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import { latestUploadBatch } from '@/lib/client/albums'
 import { fullDate } from '@/lib/format'
+import { CaptureDateFields, type CaptureDateValue } from '@/components/CaptureDateFields'
 import type { CollectionKind, EventRow } from '@/lib/types'
 
 const ORGANIZER_PAGE_SIZE = 60
@@ -41,6 +42,9 @@ export function AlbumOrganizer({
   const [kind, setKind] = useState<CollectionKind>('album')
   const [creating, setCreating] = useState(false)
   const [assigning, setAssigning] = useState(false)
+  const [datingOpen, setDatingOpen] = useState(false)
+  const [dating, setDating] = useState(false)
+  const [bulkCapture, setBulkCapture] = useState<CaptureDateValue>({ precision: 'day', takenAt: null })
   const [page, setPage] = useState(0)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -135,6 +139,40 @@ export function AlbumOrganizer({
       setError(caught instanceof Error ? caught.message : 'Could not file those memories.')
     } finally {
       setAssigning(false)
+    }
+  }
+
+  async function applyDates() {
+    if (selected.length === 0 || dating) return
+    if (!bulkCapture.takenAt) {
+      setError('Pick a date first.')
+      return
+    }
+    setDating(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const response = await fetch('/api/media/dates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: selected,
+          takenAt: bulkCapture.takenAt,
+          precision: bulkCapture.precision,
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || 'Could not set those dates.')
+
+      const updated = Number(payload.updated ?? 0)
+      setDatingOpen(false)
+      setSelected([])
+      setMessage(`Date set on ${updated} ${updated === 1 ? 'memory' : 'memories'}.`)
+      router.refresh()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not set those dates.')
+    } finally {
+      setDating(false)
     }
   }
 
@@ -281,8 +319,48 @@ export function AlbumOrganizer({
                 >
                   {allSelected ? 'Clear selection' : `Select all ${unfiled.length}`}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setDatingOpen((open) => !open)}
+                  disabled={selected.length === 0}
+                  className="btn btn-ghost disabled:opacity-40"
+                >
+                  {datingOpen ? 'Close date' : 'Set date'}
+                </button>
                 <span className="text-sm text-paper-dim">{selected.length} selected</span>
               </div>
+
+              {datingOpen && selected.length > 0 && (
+                <div className="mt-4 rounded-xl border border-edge bg-ink-high/50 p-4 animate-rise">
+                  <p className="mb-3 text-sm text-paper-soft">
+                    Set one date on all {selected.length}{' '}
+                    {selected.length === 1 ? 'memory' : 'memories'} — the honest precision for a
+                    box of old prints is often just the year.
+                  </p>
+                  <CaptureDateFields
+                    initialPrecision="year"
+                    onChange={setBulkCapture}
+                    idPrefix="bulk"
+                  />
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void applyDates()}
+                      disabled={dating || !bulkCapture.takenAt}
+                      className="btn btn-primary"
+                    >
+                      {dating ? 'Setting…' : `Set date on ${selected.length}`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDatingOpen(false)}
+                      className="text-sm text-paper-faint transition-colors hover:text-paper"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-4 grid max-h-[28rem] grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4">
                 {visibleUnfiled.map((memory) => {

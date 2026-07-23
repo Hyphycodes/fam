@@ -1,6 +1,7 @@
 'use client'
 
 import type { CropMetadata } from '@/lib/types'
+import type { CapturePrecision, CaptureSource } from '@/lib/format'
 import { cropGeometry, drawCrop } from '@/lib/client/crop-geometry'
 
 /**
@@ -116,6 +117,10 @@ export interface PreparedPhoto {
   width: number
   height: number
   takenAt: Date
+  /** Where `takenAt` came from — a real EXIF instant, or the copy-date fallback. */
+  takenSource: CaptureSource
+  /** EXIF gives an exact instant; the fallback is only trustworthy to the day. */
+  takenPrecision: CapturePrecision
   previewUrl: string
 }
 
@@ -124,12 +129,19 @@ export async function preparePhoto(file: File, crop?: CropMetadata | null): Prom
   try {
     const display = await encode(bitmap, crop, 2560, 0.86)
     const thumb = await encode(bitmap, crop, 640, 0.72)
+    // A real capture instant from EXIF is exact; anything else is the date the
+    // file was copied off the device — trustworthy only to the day, and flagged
+    // as a fallback so it surfaces in the review backlog rather than masquerading
+    // as a known date.
+    const exif = await exifTakenAt(file)
     return {
       display: display.blob,
       thumb: thumb.blob,
       width: display.width,
       height: display.height,
-      takenAt: (await exifTakenAt(file)) ?? new Date(file.lastModified),
+      takenAt: exif ?? new Date(file.lastModified),
+      takenSource: exif ? 'exif' : 'upload_fallback',
+      takenPrecision: exif ? 'exact' : 'day',
       previewUrl: URL.createObjectURL(thumb.blob),
     }
   } finally {

@@ -8,7 +8,7 @@ import { isConfigured } from '@/lib/env'
 import { getBrowseCovers, getEvents, getFeed, getOnThisDay } from '@/lib/queries'
 import { reconcileProcessingVideos } from '@/lib/reconcile'
 import { readDb } from '@/lib/db'
-import { dailyIndex, fullDate, season } from '@/lib/format'
+import { dailyIndex, formatCapturedAt, fullDate, season } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -227,7 +227,7 @@ function ShuffleCard({ media }: { media: MediaView }) {
           <span className="mt-2 block max-w-xl text-2xl font-semibold tracking-[-0.025em] text-white sm:text-3xl">
             {title}
           </span>
-          <span className="meta-mono mt-2 block text-white/65">{fullDate(media.taken_at)}</span>
+          <span className="meta-mono mt-2 block text-white/65">{formatCapturedAt(media.taken_at, media.taken_precision)}</span>
         </span>
       </Link>
     </section>
@@ -321,7 +321,7 @@ function Billboard({ media, eyebrow }: { media: MediaView; eyebrow: string }) {
             className="meta-mono mt-2.5 flex flex-wrap items-center gap-x-2 text-white/60 animate-rise"
             style={{ animationDelay: '120ms' }}
           >
-            {fullDate(media.taken_at)}
+            {formatCapturedAt(media.taken_at, media.taken_precision)}
             {media.event_name && media.event_name !== title && (
               <>
                 <span className="text-white/30">·</span>

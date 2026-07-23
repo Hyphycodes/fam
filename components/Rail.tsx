@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Avatar } from '@/components/Avatar'
 import { PeopleStack } from '@/components/PeopleStack'
-import { duration, osdDate } from '@/lib/format'
+import { duration, formatCapturedAt } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
 /**
@@ -72,7 +72,9 @@ export function MediaTile({ media }: { media: MediaView }) {
       <div className="mt-0.5 flex items-center justify-between gap-2 px-0.5">
         <span className="flex min-w-0 items-center gap-1.5">
           <Avatar name={media.uploader_name} src={media.uploader_avatar_url} size={16} />
-          <span className="meta-mono truncate">{osdDate(media.taken_at)}</span>
+          <span className="meta-mono truncate">
+            {formatCapturedAt(media.taken_at, media.taken_precision, { style: 'osd' })}
+          </span>
         </span>
         {media.people.length > 0 && <PeopleStack people={media.people} size={16} max={3} />}
       </div>

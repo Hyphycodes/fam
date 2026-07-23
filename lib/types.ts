@@ -1,3 +1,5 @@
+import type { CapturePrecision, CaptureSource } from '@/lib/format'
+
 export type Role = 'owner' | 'family'
 export type MemberRole = 'owner' | 'member'
 export type MediaType = 'photo' | 'video'
@@ -117,6 +119,10 @@ export interface MediaRow {
   favorite: boolean
   tags: string[]
   taken_at: string
+  /** How precise `taken_at` is; governs display. Defaults to 'day' if absent. */
+  taken_precision: CapturePrecision
+  /** Provenance of `taken_at`. 'upload_fallback' is the review backlog. */
+  taken_source: CaptureSource
   event_id: string | null
   upload_link_id: string | null
   status: MediaStatus

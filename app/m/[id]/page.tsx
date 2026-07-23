@@ -14,7 +14,7 @@ import { isConfigured } from '@/lib/env'
 import { getEvents, getMediaById } from '@/lib/queries'
 import { reconcileProcessingVideos } from '@/lib/reconcile'
 import { readDb } from '@/lib/db'
-import { fileSize, fullDate } from '@/lib/format'
+import { fileSize, formatCapturedAt } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 
@@ -81,7 +81,7 @@ export default async function MemoryPage({
             <Avatar name={media.uploader_name} src={media.uploader_avatar_url} size={24} />
             <span>Added by <span className="text-paper-soft">{media.uploader_name}</span></span>
             <span className="text-paper-faint">·</span>
-            {fullDate(media.taken_at)}
+            {formatCapturedAt(media.taken_at, media.taken_precision)}
             {media.location_text && (
               <>
                 <span className="text-paper-faint">·</span>

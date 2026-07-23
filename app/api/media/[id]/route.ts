@@ -1,4 +1,5 @@
 import { fail, handleError, ok, readJson } from '@/lib/api'
+import { isCapturePrecision } from '@/lib/format'
 import { getActor } from '@/lib/community/actor'
 import { getMediaById } from '@/lib/queries'
 import { readDb } from '@/lib/db'
@@ -24,6 +25,7 @@ interface Patch {
   favorite?: boolean
   eventId?: string | null
   takenAt?: string
+  takenPrecision?: string
   location?: string | null
   people?: (string | { name?: string; memberId?: string | null; profileId?: string | null })[]
 }
@@ -46,8 +48,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       changes.location_text = (body.location ?? '').trim().slice(0, 200) || null
     if (body.takenAt) {
       const date = new Date(body.takenAt)
-      if (!Number.isNaN(date.getTime())) changes.taken_at = date.toISOString()
+      if (!Number.isNaN(date.getTime())) {
+        changes.taken_at = date.toISOString()
+        // A person set this date by hand. Mark it sacred: no automated job
+        // (backfill, EXIF-on-upload, future inherit) may ever overwrite a
+        // 'user' source.
+        changes.taken_source = 'user'
+      }
     }
+    if (isCapturePrecision(body.takenPrecision)) changes.taken_precision = body.takenPrecision
 
     if (Object.keys(changes).length > 0) {
       const { error } = await db.from('media').update(changes).eq('id', id)

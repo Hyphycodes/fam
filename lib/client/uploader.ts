@@ -337,7 +337,12 @@ export class UploadQueue {
     if (caption) patch.caption = caption
     if (people && people.length > 0) patch.people = people
     if (eventId) patch.eventId = eventId
-    if (details.takenAt) patch.takenAt = details.takenAt
+    // A hand-set batch date is a person's call (source becomes 'user' server-side)
+    // and is day-level — it comes from a date picker, not a clock.
+    if (details.takenAt) {
+      patch.takenAt = details.takenAt
+      patch.takenPrecision = 'day'
+    }
     if (location) patch.location = location
     if (Object.keys(patch).length === 0) return null
 
@@ -401,6 +406,8 @@ export class UploadQueue {
       width: prepared.width,
       height: prepared.height,
       takenAt: prepared.takenAt.toISOString(),
+      takenSource: prepared.takenSource,
+      takenPrecision: prepared.takenPrecision,
       contentHash: item.contentHash,
       cropMetadata: item.crop ?? null,
       displayType: prepared.display.type,
@@ -466,7 +473,12 @@ export class UploadQueue {
         filename: item.file.name,
         size: item.file.size,
         contentType: item.file.type || null,
+        // Video carries no EXIF. Without a hand-set batch date this is the
+        // copy-date fallback; a batch date, if set, is promoted to a user date
+        // by applyDetails below.
         takenAt: item.context.details?.takenAt ?? new Date(item.file.lastModified).toISOString(),
+        takenSource: 'upload_fallback',
+        takenPrecision: 'day',
         contentHash: item.contentHash,
       })
       if (response.duplicate || !response.uploadUrl) {

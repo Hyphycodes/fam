@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { fail, handleError, isUploader, logDbError, ok, readJson, resolveUploader } from '@/lib/api'
 import { buildKey, presignPut } from '@/lib/r2'
 import { isConfigured, missing } from '@/lib/env'
+import { isCapturePrecision, isCaptureSource } from '@/lib/format'
 import type { CropMetadata } from '@/lib/types'
 
 interface Body {
@@ -11,6 +12,8 @@ interface Body {
   width?: number
   height?: number
   takenAt?: string
+  takenSource?: string
+  takenPrecision?: string
   displayType?: string
   thumbType?: string
   eventId?: string | null
@@ -56,6 +59,10 @@ export async function POST(request: Request) {
 
     const filename = (body.filename ?? 'photo').slice(0, 200)
     const takenAt = parseDate(body.takenAt) ?? new Date()
+    // Provenance rides along with the date: a real EXIF instant is 'exif'/'exact',
+    // anything else the copy-date fallback. Never trust the label past the enum.
+    const takenSource = isCaptureSource(body.takenSource) ? body.takenSource : 'upload_fallback'
+    const takenPrecision = isCapturePrecision(body.takenPrecision) ? body.takenPrecision : 'day'
     const originalType = body.contentType || 'application/octet-stream'
     const displayType = body.displayType || 'image/jpeg'
     const thumbType = body.thumbType || 'image/jpeg'
@@ -144,6 +151,8 @@ export async function POST(request: Request) {
       content_hash: contentHash,
       crop_metadata: cropMetadata,
       taken_at: takenAt.toISOString(),
+      taken_source: takenSource,
+      taken_precision: takenPrecision,
       event_id: uploader.eventId,
       r2_key: keys.original,
       r2_display_key: keys.display,

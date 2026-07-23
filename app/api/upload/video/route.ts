@@ -1,11 +1,14 @@
 import { fail, handleError, isUploader, logDbError, ok, readJson, resolveUploader } from '@/lib/api'
 import { createDirectUpload, deleteVideo } from '@/lib/stream'
+import { isCapturePrecision, isCaptureSource } from '@/lib/format'
 
 interface Body {
   filename?: string
   size?: number
   contentType?: string | null
   takenAt?: string
+  takenSource?: string
+  takenPrecision?: string
   eventId?: string | null
   linkToken?: string | null
   uploaderLabel?: string | null
@@ -85,6 +88,8 @@ export async function POST(request: Request) {
     })
 
     const takenAt = parseDate(body.takenAt) ?? new Date()
+    const takenSource = isCaptureSource(body.takenSource) ? body.takenSource : 'upload_fallback'
+    const takenPrecision = isCapturePrecision(body.takenPrecision) ? body.takenPrecision : 'day'
 
     const { data, error } = await uploader.db
       .from('media')
@@ -100,6 +105,8 @@ export async function POST(request: Request) {
         byte_size: size,
         content_hash: contentHash,
         taken_at: takenAt.toISOString(),
+        taken_source: takenSource,
+        taken_precision: takenPrecision,
         event_id: uploader.eventId,
         status: 'processing',
       })

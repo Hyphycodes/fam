@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { PersonTagPicker, type TagChip } from '@/components/PersonTagPicker'
 import { EventPicker } from '@/components/EventPicker'
 import { PhotoRecropButton } from '@/components/PhotoRecropButton'
+import { CaptureDateFields, type CaptureDateValue } from '@/components/CaptureDateFields'
 import type { EventRow, MediaView } from '@/lib/types'
 
 /**
@@ -35,7 +36,10 @@ export function MemoryEditor({
     })),
   )
   const [favorite, setFavorite] = useState(media.favorite)
-  const [takenAt, setTakenAt] = useState(media.taken_at.slice(0, 10))
+  const [capture, setCapture] = useState<CaptureDateValue>({
+    precision: media.taken_precision,
+    takenAt: media.taken_at,
+  })
   const [location, setLocation] = useState(media.location_text ?? '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -53,7 +57,8 @@ export function MemoryEditor({
           caption,
           eventId: eventId || null,
           favorite,
-          takenAt: takenAt ? new Date(`${takenAt}T12:00:00`).toISOString() : undefined,
+          takenAt: capture.takenAt ?? undefined,
+          takenPrecision: capture.precision,
           location,
           people: people.map((person) => ({
             name: person.name,
@@ -149,26 +154,27 @@ export function MemoryEditor({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs tracking-[0.2em] text-paper-faint uppercase">
-              Date
-              <input
-                type="date"
-                value={takenAt}
-                onChange={(event) => setTakenAt(event.target.value)}
-                className="field mt-2 tracking-normal normal-case"
-              />
-            </label>
-            <label className="text-xs tracking-[0.2em] text-paper-faint uppercase">
-              Location
-              <input
-                value={location}
-                onChange={(event) => setLocation(event.target.value)}
-                className="field mt-2 tracking-normal normal-case"
-                placeholder="Optional"
-              />
-            </label>
+          <div>
+            <span className="mb-2 block text-xs tracking-[0.2em] text-paper-faint uppercase">
+              Date taken
+            </span>
+            <CaptureDateFields
+              initialTakenAt={media.taken_at}
+              initialPrecision={media.taken_precision}
+              onChange={setCapture}
+              idPrefix={`edit-${media.id}`}
+            />
           </div>
+
+          <label className="block text-xs tracking-[0.2em] text-paper-faint uppercase">
+            Location
+            <input
+              value={location}
+              onChange={(event) => setLocation(event.target.value)}
+              className="field mt-2 tracking-normal normal-case"
+              placeholder="Optional"
+            />
+          </label>
 
           <div>
             <label className="mb-2 block text-xs tracking-[0.2em] text-paper-faint uppercase">

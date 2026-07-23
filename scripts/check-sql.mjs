@@ -311,8 +311,57 @@ if (tags[0].n === 0) pass('Tags can actually be removed')
 else fail('media_people DELETE is a silent no-op — re-tagging will break')
 
 const { rows: versions } = await db.query(`select public.reel_schema_version() as version`)
-if (versions[0].version === 8) pass('Production readiness can identify schema version 8')
+if (versions[0].version === 9) pass('Production readiness can identify schema version 9')
 else fail(`Unexpected schema version: ${versions[0].version}`)
+
+// ---------------------------------------------------------------------------
+// Capture precision + source (0009)
+//
+// taken_at is the sort key; precision governs how honestly a date is displayed
+// and source is the "which dates are still guesses" backlog.
+// ---------------------------------------------------------------------------
+console.log('\nCapture precision + source')
+
+// A fresh row with no precision/source specified must land on the safe defaults.
+await db.exec(`insert into public.media (id, uploader_id, type, r2_key, taken_at, status, content_hash)
+  values ('88888888-8888-8888-8888-888888888888',
+          '11111111-1111-1111-1111-111111111111',
+          'photo', 'originals/precision.jpg', '2006-11-12T09:30:00Z', 'ready',
+          'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc')`)
+const { rows: defaulted } = await db.query(
+  `select taken_precision, taken_source from public.media
+    where id = '88888888-8888-8888-8888-888888888888'`,
+)
+if (defaulted[0].taken_precision === 'day' && defaulted[0].taken_source === 'upload_fallback') {
+  pass('New media defaults to day / upload_fallback')
+} else {
+  fail(`Wrong capture defaults: ${JSON.stringify(defaulted[0])}`)
+}
+
+// The check constraint keeps precision honest.
+try {
+  await db.exec(`update public.media set taken_precision = 'decade'
+    where id = '88888888-8888-8888-8888-888888888888'`)
+  fail('taken_precision accepted a value outside the allowed set')
+} catch {
+  pass('taken_precision rejects values outside exact/day/month/year')
+}
+
+// A person's correction (source='user') survives a re-run of the backfill.
+await db.exec(`update public.media
+    set taken_source = 'user', taken_precision = 'year'
+  where id = '88888888-8888-8888-8888-888888888888'`)
+const backfill = await readFile(path.join(migrationsDir, '0009_capture_precision.sql'), 'utf8')
+await db.exec(backfill)
+const { rows: preserved } = await db.query(
+  `select taken_precision, taken_source from public.media
+    where id = '88888888-8888-8888-8888-888888888888'`,
+)
+if (preserved[0].taken_source === 'user' && preserved[0].taken_precision === 'year') {
+  pass('Re-running the backfill never overwrites a user-corrected date')
+} else {
+  fail(`Backfill clobbered a user edit: ${JSON.stringify(preserved[0])}`)
+}
 
 await db.exec(`
   insert into public.members (id, first_name, last_initial, display_name) values

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { VideoFrame } from '@/components/VideoFrame'
 import { DownloadButton } from '@/components/DownloadButton'
-import { fullDate } from '@/lib/format'
+import { formatCapturedAt } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
 /** Full-bleed viewing. Arrow keys and swipe move through the set. */
@@ -100,7 +100,7 @@ export function Lightbox({
       <div className="flex items-center justify-between px-5 py-4 sm:px-8">
         <div className="min-w-0">
           <p className="truncate text-sm text-paper-soft">{media.uploader_name}</p>
-          <p className="text-xs text-paper-dim">{fullDate(media.taken_at)}</p>
+          <p className="text-xs text-paper-dim">{formatCapturedAt(media.taken_at, media.taken_precision)}</p>
         </div>
         <div className="flex items-center gap-2">
           <Link

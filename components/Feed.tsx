@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Lightbox } from '@/components/Lightbox'
 import { Avatar } from '@/components/Avatar'
 import { PeopleStack } from '@/components/PeopleStack'
-import { duration, warmDate } from '@/lib/format'
+import { duration, warmCapturedAt } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
 
 /**
@@ -235,7 +235,7 @@ function MemoryCard({
             <Avatar name={media.uploader_name} src={media.uploader_avatar_url} size={20} />
             <span className="text-paper-soft">{media.uploader_name}</span>
             <span className="text-paper-faint">·</span>
-            {warmDate(media.taken_at)}
+            {warmCapturedAt(media.taken_at, media.taken_precision)}
             {media.event_name && (
               <>
                 <span className="text-paper-faint">·</span>
