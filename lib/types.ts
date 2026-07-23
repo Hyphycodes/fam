@@ -90,6 +90,35 @@ export interface BoardEvent {
 /** The domain name for the events table. An event is a collection with kind='event'. */
 export type Collection = EventRow
 
+export type ArtifactType = 'flyer' | 'image_doc' | 'pdf' | 'audio' | 'link'
+
+export interface EventArtifact {
+  id: string
+  event_id: string
+  type: ArtifactType
+  storage_key: string | null
+  url: string | null
+  title: string | null
+  caption: string | null
+  captured_at: string | null
+  sort_order: number
+  created_at: string
+}
+
+/** An artifact with its content resolved for rendering. */
+export interface ArtifactView {
+  id: string
+  event_id: string
+  type: ArtifactType
+  title: string | null
+  caption: string | null
+  captured_at: string | null
+  /** Presigned GET for uploaded types, or the external URL for links. */
+  href: string | null
+  /** For link artifacts: the bare domain, for a favicon and a label. */
+  domain: string | null
+}
+
 /** A tagged person: a member (with avatar) or a free-text name. */
 export interface TaggedPerson {
   id: string

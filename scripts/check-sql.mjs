@@ -103,6 +103,7 @@ const expectedTables = [
   'music_tracks',
   'members',
   'member_sessions',
+  'event_artifacts',
 ]
 const { rows: tables } = await db.query(
   `select table_name from information_schema.tables where table_schema = 'public'`,
@@ -311,8 +312,43 @@ if (tags[0].n === 0) pass('Tags can actually be removed')
 else fail('media_people DELETE is a silent no-op — re-tagging will break')
 
 const { rows: versions } = await db.query(`select public.reel_schema_version() as version`)
-if (versions[0].version === 11) pass('Production readiness can identify schema version 11')
+if (versions[0].version === 12) pass('Production readiness can identify schema version 12')
 else fail(`Unexpected schema version: ${versions[0].version}`)
+
+// ---------------------------------------------------------------------------
+// Event artifacts (0012)
+// ---------------------------------------------------------------------------
+console.log('\nEvent artifacts')
+
+await db.exec(`insert into public.events (id, name) values
+  ('ea000000-0000-0000-0000-000000000001', 'Artifact host')`)
+await db.exec(`insert into public.event_artifacts (id, event_id, type, url, title) values
+  ('af000000-0000-0000-0000-000000000001', 'ea000000-0000-0000-0000-000000000001', 'link',
+   'https://maps.example/here', 'Directions')`)
+const { rows: art } = await db.query(`select count(*)::int n from public.event_artifacts`)
+if (art[0].n === 1) pass('An artifact attaches to an event')
+else fail(`Artifact insert wrong: ${JSON.stringify(art[0])}`)
+
+try {
+  await db.exec(`insert into public.event_artifacts (event_id, type, title)
+    values ('ea000000-0000-0000-0000-000000000001', 'link', 'No content')`)
+  fail('event_artifacts accepted a row with neither storage_key nor url')
+} catch {
+  pass('event_artifacts requires a storage_key or a url')
+}
+
+try {
+  await db.exec(`insert into public.event_artifacts (event_id, type, url)
+    values ('ea000000-0000-0000-0000-000000000001', 'spreadsheet', 'https://x')`)
+  fail('event_artifacts accepted an unknown type')
+} catch {
+  pass('event_artifacts rejects types outside the five')
+}
+
+await db.exec(`delete from public.events where id = 'ea000000-0000-0000-0000-000000000001'`)
+const { rows: afterDelete } = await db.query(`select count(*)::int n from public.event_artifacts`)
+if (afterDelete[0].n === 0) pass('Deleting an event cascades to its artifacts')
+else fail('event_artifacts were orphaned when the event was deleted')
 
 // ---------------------------------------------------------------------------
 // Event lifecycle (0011)

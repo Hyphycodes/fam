@@ -2,7 +2,9 @@ import 'server-only'
 
 import type { DB } from '@/lib/api'
 import { hydrate } from '@/lib/queries'
-import type { MediaRow, MediaView } from '@/lib/types'
+import { presignGet } from '@/lib/r2'
+import { isConfigured } from '@/lib/env'
+import type { ArtifactType, MediaRow, MediaView } from '@/lib/types'
 
 /**
  * The timeline's reads.
@@ -79,6 +81,43 @@ export async function getTimelineEvents(db: DB): Promise<TimelineEvent[]> {
     date: event.event_date ?? event.created_at,
     cover_url: event.cover_media_id ? (coverUrl.get(event.cover_media_id) ?? null) : null,
   }))
+}
+
+export interface TimelineArtifact {
+  id: string
+  event_id: string
+  type: ArtifactType
+  title: string | null
+  date: string
+  thumb: string | null
+}
+
+/** Artifacts carrying a captured_at earn a small card in the timeline at that
+ *  date (a flyer made two weeks before the party is when the plan started).
+ *  Ones without a date stay attached to their event only. Bounded set. */
+export async function getTimelineArtifacts(db: DB): Promise<TimelineArtifact[]> {
+  const { data } = await db
+    .from('event_artifacts')
+    .select('id, event_id, type, title, storage_key, captured_at')
+    .not('captured_at', 'is', null)
+
+  const rows = (data ?? []) as {
+    id: string
+    event_id: string
+    type: ArtifactType
+    title: string | null
+    storage_key: string | null
+    captured_at: string
+  }[]
+  const r2 = isConfigured('r2')
+
+  return Promise.all(
+    rows.map(async (row): Promise<TimelineArtifact> => {
+      const isImage = row.type === 'flyer' || row.type === 'image_doc'
+      const thumb = isImage && row.storage_key && r2 ? await presignGet(row.storage_key) : null
+      return { id: row.id, event_id: row.event_id, type: row.type, title: row.title, date: row.captured_at, thumb }
+    }),
+  )
 }
 
 export interface TimelinePage {

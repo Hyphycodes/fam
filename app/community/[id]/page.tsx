@@ -7,10 +7,12 @@ import { Comments } from '@/components/Comments'
 import { Avatar } from '@/components/Avatar'
 import { AddMemoriesButton } from '@/components/AddMemories'
 import { EventLifecycle } from '@/components/EventLifecycle'
+import { Artifacts } from '@/components/Artifacts'
 import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
 import { readDb } from '@/lib/db'
 import { getCollectionById } from '@/lib/community/events'
+import { getArtifacts } from '@/lib/community/artifacts'
 import { getFeed } from '@/lib/queries'
 import { fullDate } from '@/lib/format'
 
@@ -33,7 +35,10 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   if (!event) notFound()
 
   const planned = event.status !== 'completed'
-  const media = planned ? [] : await getFeed(db, { eventId: id, limit: 12 })
+  const [media, artifacts] = await Promise.all([
+    planned ? Promise.resolve([]) : getFeed(db, { eventId: id, limit: 12 }),
+    getArtifacts(db, id),
+  ])
 
   return (
     <Shell viewer={viewer}>
@@ -92,34 +97,40 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       </div>
 
       {planned ? (
-        <p className="mt-10 rounded-xl border border-dashed border-edge px-5 py-8 text-center text-sm text-paper-dim">
-          Photos and videos land here once it happens. For now, it&rsquo;s a plan — react and talk
-          it through above.
-        </p>
+        <>
+          <Artifacts eventId={event.id} artifacts={artifacts} canEdit planned />
+          <p className="mt-8 rounded-xl border border-dashed border-edge px-5 py-6 text-center text-sm text-paper-dim">
+            Photos and videos land here once it happens. For now, it&rsquo;s a plan — react and talk
+            it through above.
+          </p>
+        </>
       ) : (
-        <section className="mt-10">
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold tracking-[-0.01em]">
-              The album
-              <span className="ml-2 text-sm font-normal text-paper-faint">
-                {event.media_count} {event.media_count === 1 ? 'photo' : 'photos'}
-              </span>
-            </h2>
-            <AddMemoriesButton variant="hero" context={{ eventId: event.id }} />
-          </div>
+        <>
+          <section className="mt-10">
+            <div className="mb-5 flex items-center justify-between gap-4">
+              <h2 className="text-lg font-semibold tracking-[-0.01em]">
+                The album
+                <span className="ml-2 text-sm font-normal text-paper-faint">
+                  {event.media_count} {event.media_count === 1 ? 'photo' : 'photos'}
+                </span>
+              </h2>
+              <AddMemoriesButton variant="hero" context={{ eventId: event.id }} />
+            </div>
 
-          <Feed
-            initial={media}
-            initialCursor={media.length ? media[media.length - 1].created_at : null}
-            query={`event=${event.id}`}
-            emptyState={
-              <p className="max-w-md leading-relaxed text-paper-dim">
-                No photos in this album yet. Add the first with the button above — everyone
-                can keep adding to it.
-              </p>
-            }
-          />
-        </section>
+            <Feed
+              initial={media}
+              initialCursor={media.length ? media[media.length - 1].created_at : null}
+              query={`event=${event.id}`}
+              emptyState={
+                <p className="max-w-md leading-relaxed text-paper-dim">
+                  No photos in this album yet. Add the first with the button above — everyone
+                  can keep adding to it.
+                </p>
+              }
+            />
+          </section>
+          <Artifacts eventId={event.id} artifacts={artifacts} canEdit planned={false} />
+        </>
       )}
     </Shell>
   )

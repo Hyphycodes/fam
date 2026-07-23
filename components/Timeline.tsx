@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { duration, formatCapturedAt } from '@/lib/format'
 import type { MediaView } from '@/lib/types'
-import type { MonthCount, TimelineCursor, TimelineEvent } from '@/lib/timeline'
+import type { MonthCount, TimelineArtifact, TimelineCursor, TimelineEvent } from '@/lib/timeline'
 
 /**
  * The Timeline — one continuous scroll through the whole archive, ordered by
@@ -31,6 +31,7 @@ interface MonthGroup {
   band: MediaView[] // month-precision items — surfaced at the top of the month
   grid: MediaView[]
   events: { id: string; name: string; cover: string | null; count: number }[]
+  artifacts: TimelineArtifact[]
 }
 interface YearGroup {
   year: number
@@ -52,7 +53,7 @@ function group(media: MediaView[]): YearGroup[] {
     }
     let mg = yg.months.find((m) => m.month === item.taken_month)
     if (!mg) {
-      mg = { year: item.taken_year, month: item.taken_month, band: [], grid: [], events: [] }
+      mg = { year: item.taken_year, month: item.taken_month, band: [], grid: [], events: [], artifacts: [] }
       yg.months.push(mg)
     }
     if (item.taken_precision === 'month') mg.band.push(item)
@@ -87,20 +88,24 @@ function group(media: MediaView[]): YearGroup[] {
  * wait until scrolling reaches them, so the walk stays in order — unless we've
  * loaded everything, in which case they all belong.
  */
-function groupWithEvents(media: MediaView[], events: TimelineEvent[], done: boolean): YearGroup[] {
+function groupWithEvents(
+  media: MediaView[],
+  events: TimelineEvent[],
+  artifacts: TimelineArtifact[],
+  done: boolean,
+): YearGroup[] {
   const years = group(media)
-  if (events.length === 0) return years
+  if (events.length === 0 && artifacts.length === 0) return years
 
   const oldest = media.length ? new Date(media[media.length - 1].taken_at).getTime() : null
   const byYear = new Map(years.map((yg) => [yg.year, yg]))
 
-  for (const event of events) {
-    const at = new Date(event.date.length === 10 ? `${event.date}T12:00:00Z` : event.date)
-    if (Number.isNaN(at.getTime())) continue
-    if (!done && oldest !== null && at.getTime() < oldest) continue // not yet in view
+  const monthFor = (dateStr: string): MonthGroup | null => {
+    const at = new Date(dateStr.length === 10 ? `${dateStr}T12:00:00Z` : dateStr)
+    if (Number.isNaN(at.getTime())) return null
+    if (!done && oldest !== null && at.getTime() < oldest) return null // not yet in view
     const year = at.getUTCFullYear()
     const month = at.getUTCMonth() + 1
-
     let yg = byYear.get(year)
     if (!yg) {
       yg = { year, band: [], months: [] }
@@ -108,11 +113,22 @@ function groupWithEvents(media: MediaView[], events: TimelineEvent[], done: bool
     }
     let mg = yg.months.find((m) => m.month === month)
     if (!mg) {
-      mg = { year, month, band: [], grid: [], events: [] }
+      mg = { year, month, band: [], grid: [], events: [], artifacts: [] }
       yg.months.push(mg)
     }
+    return mg
+  }
+
+  for (const event of events) {
+    const mg = monthFor(event.date)
+    if (!mg) continue
     if (mg.events.some((e) => e.id === event.id)) continue // already shown via its media
     mg.events.push({ id: event.id, name: event.name, cover: event.cover_url, count: 0 })
+  }
+
+  for (const artifact of artifacts) {
+    const mg = monthFor(artifact.date)
+    if (mg) mg.artifacts.push(artifact)
   }
 
   const merged = [...byYear.values()].sort((a, b) => b.year - a.year)
@@ -125,12 +141,14 @@ export function Timeline({
   initialCursor,
   monthCounts,
   events,
+  artifacts,
   people,
 }: {
   initialMedia: MediaView[]
   initialCursor: TimelineCursor | null
   monthCounts: MonthCount[]
   events: TimelineEvent[]
+  artifacts: TimelineArtifact[]
   people: { id: string; name: string }[]
 }) {
   const [media, setMedia] = useState(initialMedia)
@@ -145,8 +163,8 @@ export function Timeline({
   // Events only belong in the unfiltered view — a person/type filter is about
   // media, and injecting whole events would muddy it.
   const groups = useMemo(
-    () => (filtered ? group(media) : groupWithEvents(media, events, done)),
-    [media, events, done, filtered],
+    () => (filtered ? group(media) : groupWithEvents(media, events, artifacts, done)),
+    [media, events, artifacts, done, filtered],
   )
 
   // Years that have content, grouped by decade — the rail. Volumes come from the
@@ -367,6 +385,14 @@ export function Timeline({
                     <AlbumCard key={event.id} event={event} />
                   ))}
 
+                  {mg.artifacts.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {mg.artifacts.map((artifact) => (
+                        <ArtifactChip key={artifact.id} artifact={artifact} />
+                      ))}
+                    </div>
+                  )}
+
                   {mg.band.length > 0 && (
                     <ApproximateBand label={`${MONTHS[mg.month]} ${mg.year} · approximate`} items={mg.band} />
                   )}
@@ -397,7 +423,7 @@ export function Timeline({
 function estimateHeight(mg: MonthGroup): number {
   const tiles = mg.grid.length + mg.band.length
   const rows = Math.ceil(tiles / 3)
-  return 60 + mg.events.length * 64 + rows * 128
+  return 60 + mg.events.length * 64 + (mg.artifacts.length ? 48 : 0) + rows * 128
 }
 
 function Grid({ children }: { children: React.ReactNode }) {
@@ -433,6 +459,34 @@ function Tile({ media, approximate }: { media: MediaView; approximate?: boolean 
           approx.
         </span>
       )}
+    </Link>
+  )
+}
+
+const ARTIFACT_GLYPH: Record<TimelineArtifact['type'], string> = {
+  flyer: '🎟️',
+  image_doc: '📄',
+  pdf: '📄',
+  audio: '🎧',
+  link: '🔗',
+}
+
+/** A small, distinct card for an artifact dated into the timeline — it lives on
+ *  its event, so tapping opens that event. */
+function ArtifactChip({ artifact }: { artifact: TimelineArtifact }) {
+  return (
+    <Link
+      href={`/community/${artifact.event_id}`}
+      className="flex items-center gap-2 rounded-lg border border-edge bg-ink-raised py-1.5 pr-3 pl-1.5 text-sm text-paper-soft transition-colors hover:border-edge-strong hover:text-paper"
+    >
+      <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded bg-ink-high text-xs">
+        {artifact.thumb ? (
+          <img src={artifact.thumb} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span aria-hidden="true">{ARTIFACT_GLYPH[artifact.type]}</span>
+        )}
+      </span>
+      <span className="max-w-[12rem] truncate">{artifact.title ?? 'Artifact'}</span>
     </Link>
   )
 }
