@@ -1,22 +1,26 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { duration, formatCapturedAt } from '@/lib/format'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { duration, formatCapturedAt, fullDate } from '@/lib/format'
 import { EventCover } from '@/components/EventCover'
 import type { MediaView } from '@/lib/types'
 import type { MonthCount, TimelineArtifact, TimelineCursor, TimelineEvent } from '@/lib/timeline'
 
 /**
  * The Timeline — one continuous scroll through the whole archive, ordered by
- * capture date. Three densities in one route: a persistent decades/years rail to
- * jump, pinned year headers as you pass them, and month grids of everything.
+ * capture date, reading like a history rather than a dump.
+ *
+ * The rule: an item appears exactly once. Media that belongs to a completed
+ * event lives *inside that event's card* (collapsed by default, one tap from its
+ * full grid); media that belongs to nothing is loose in the month grid. A month
+ * never shows more than a screenful loose — the rest is one "Show all" away.
  *
  * Performance is built for tens of thousands of items: keyset pagination on
  * (taken_at, id), month sections use CSS `content-visibility` so off-screen
  * months aren't laid out or painted, images lazy-load into fixed-aspect boxes
- * (no layout shift), and the rail's volumes come from a grouped count, never
- * from the rows themselves.
+ * (no layout shift), and the year scrubber's list comes from a grouped count,
+ * never from the rows themselves.
  */
 
 const MONTHS = [
@@ -25,13 +29,27 @@ const MONTHS = [
 ]
 const MAX_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 const PAGE = 48
+/** How many loose items a month shows before "Show all N" — legibility over exhaustiveness. */
+const MONTH_CAP = 12
+/** Above this many years with content, the scrubber groups into decades. */
+const FLAT_YEARS = 12
+
+/** An event as it sits in the timeline: its own card, its media folded inside. */
+interface TimelineEventCard {
+  id: string
+  name: string
+  cover: string | null
+  count: number
+  preview: string[]
+  date: string
+}
 
 interface MonthGroup {
   year: number
   month: number
   band: MediaView[] // month-precision items — surfaced at the top of the month
   grid: MediaView[]
-  events: { id: string; name: string; cover: string | null; count: number }[]
+  events: TimelineEventCard[]
   artifacts: TimelineArtifact[]
 }
 interface YearGroup {
@@ -40,6 +58,81 @@ interface YearGroup {
   months: MonthGroup[]
 }
 
+/** A title made entirely of emoji ("🏆") gets rendered at display size, not as
+ *  a bare little glyph on a text line. Allows pictographs plus the joiners and
+ *  variation selectors that compose them (ZWJ, U+FE0F) and whitespace. */
+const EMOJI_ONLY = /^[\p{Extended_Pictographic}\u200d\uFE0F\s]+$/u
+function isEmojiOnly(name: string): boolean {
+  const trimmed = name.trim()
+  return trimmed.length > 0 && EMOJI_ONLY.test(trimmed)
+}
+
+/** Placement parse (UTC noon), so an event lands in the same month bucket the
+ *  DB's generated taken_* columns would put media of that day in. */
+function placeDate(value: string): Date {
+  return new Date(value.length === 10 ? `${value}T12:00:00Z` : value)
+}
+/** Display parse (local noon), so a date-only value never drifts a day. */
+function showDate(value: string): Date {
+  return new Date(value.length === 10 ? `${value}T12:00:00` : value)
+}
+
+// Expansion is remembered for the session so collapsing something doesn't undo
+// itself on the next render (a refresh, a filter change, a jump). A tiny
+// external store keeps every card in sync; useSyncExternalStore gives SSR a
+// stable "collapsed" snapshot, so restoring open state is mismatch-free.
+const OPEN_KEY = 'timeline:open-events'
+
+function loadOpenEvents(): Set<string> {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    return new Set(JSON.parse(sessionStorage.getItem(OPEN_KEY) ?? '[]') as string[])
+  } catch {
+    return new Set()
+  }
+}
+
+const openStore = {
+  ids: null as Set<string> | null,
+  listeners: new Set<() => void>(),
+  ensure(): Set<string> {
+    if (!this.ids) this.ids = loadOpenEvents()
+    return this.ids
+  },
+  has(id: string): boolean {
+    return this.ensure().has(id)
+  },
+  set(id: string, on: boolean): void {
+    const ids = this.ensure()
+    if (on) ids.add(id)
+    else ids.delete(id)
+    try {
+      sessionStorage.setItem(OPEN_KEY, JSON.stringify([...ids]))
+    } catch {
+      // A private-mode sessionStorage can throw; expansion just won't persist.
+    }
+    for (const listener of this.listeners) listener()
+  },
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  },
+}
+
+function useEventOpen(id: string): [boolean, () => void] {
+  const open = useSyncExternalStore(
+    (onChange) => openStore.subscribe(onChange),
+    () => openStore.has(id),
+    () => false,
+  )
+  const toggle = useCallback(() => openStore.set(id, !openStore.has(id)), [id])
+  return [open, toggle]
+}
+
+/** Group loose media (nothing that belongs to a completed event) into years and
+ *  months. Event cards are woven in separately by groupWithEvents. */
 function group(media: MediaView[]): YearGroup[] {
   const years = new Map<number, YearGroup>()
   for (const item of media) {
@@ -60,34 +153,16 @@ function group(media: MediaView[]): YearGroup[] {
     if (item.taken_precision === 'month') mg.band.push(item)
     else mg.grid.push(item)
   }
-  for (const yg of years.values()) {
-    yg.months.sort((a, b) => b.month - a.month)
-    for (const mg of yg.months) {
-      const seen = new Map<string, MonthGroup['events'][number]>()
-      for (const item of [...mg.band, ...mg.grid]) {
-        if (!item.event_id || !item.event_name) continue
-        const existing = seen.get(item.event_id)
-        if (existing) existing.count += 1
-        else
-          seen.set(item.event_id, {
-            id: item.event_id,
-            name: item.event_name,
-            cover: item.thumb_url ?? item.display_url,
-            count: 1,
-          })
-      }
-      mg.events = [...seen.values()]
-    }
-  }
+  for (const yg of years.values()) yg.months.sort((a, b) => b.month - a.month)
   return [...years.values()].sort((a, b) => b.year - a.year)
 }
 
 /**
- * Weave completed events into the media grouping so a just-completed event (with
- * no photos yet) still appears at its date. An event already surfaced by its own
- * media is left alone (no double card). Events older than the oldest loaded row
- * wait until scrolling reaches them, so the walk stays in order — unless we've
- * loaded everything, in which case they all belong.
+ * Weave completed events (and dated artifacts) into the timeline. Media that
+ * belongs to one of those events is pulled out of the loose grid entirely — it
+ * appears only inside its card — so nothing renders twice. An event whose media
+ * hasn't scrolled into view yet still waits (chronological order), unless it has
+ * loaded media that needs a home right now, or we've loaded everything.
  */
 function groupWithEvents(
   media: MediaView[],
@@ -95,16 +170,32 @@ function groupWithEvents(
   artifacts: TimelineArtifact[],
   done: boolean,
 ): YearGroup[] {
-  const years = group(media)
+  const eventIds = new Set(events.map((e) => e.id))
+  const loose: MediaView[] = []
+  const loaded = new Set<string>()
+  for (const item of media) {
+    if (item.event_id && eventIds.has(item.event_id)) {
+      loaded.add(item.event_id)
+      continue // belongs to an event → shown only inside that event's card
+    }
+    loose.push(item)
+  }
+
+  const years = group(loose)
   if (events.length === 0 && artifacts.length === 0) return years
 
   const oldest = media.length ? new Date(media[media.length - 1].taken_at).getTime() : null
   const byYear = new Map(years.map((yg) => [yg.year, yg]))
 
+  const gated = (dateStr: string, hasLoaded: boolean): boolean => {
+    if (done || oldest === null || hasLoaded) return false
+    const at = placeDate(dateStr).getTime()
+    return Number.isNaN(at) ? false : at < oldest // older than everything loaded → wait
+  }
+
   const monthFor = (dateStr: string): MonthGroup | null => {
-    const at = new Date(dateStr.length === 10 ? `${dateStr}T12:00:00Z` : dateStr)
+    const at = placeDate(dateStr)
     if (Number.isNaN(at.getTime())) return null
-    if (!done && oldest !== null && at.getTime() < oldest) return null // not yet in view
     const year = at.getUTCFullYear()
     const month = at.getUTCMonth() + 1
     let yg = byYear.get(year)
@@ -121,13 +212,21 @@ function groupWithEvents(
   }
 
   for (const event of events) {
+    if (gated(event.date, loaded.has(event.id))) continue
     const mg = monthFor(event.date)
-    if (!mg) continue
-    if (mg.events.some((e) => e.id === event.id)) continue // already shown via its media
-    mg.events.push({ id: event.id, name: event.name, cover: event.cover_url, count: 0 })
+    if (!mg || mg.events.some((e) => e.id === event.id)) continue
+    mg.events.push({
+      id: event.id,
+      name: event.name,
+      cover: event.cover_url,
+      count: event.count,
+      preview: event.preview,
+      date: event.date,
+    })
   }
 
   for (const artifact of artifacts) {
+    if (gated(artifact.date, false)) continue
     const mg = monthFor(artifact.date)
     if (mg) mg.artifacts.push(artifact)
   }
@@ -161,36 +260,22 @@ export function Timeline({
   const [error, setError] = useState<string | null>(null)
   const [type, setType] = useState<'photo' | 'video' | null>(initialType)
   const [personId, setPersonId] = useState<string | null>(null)
+  const [activeYear, setActiveYear] = useState<number | null>(null)
 
   const filtered = type !== null || personId !== null
   // Events only belong in the unfiltered view — a person/type filter is about
-  // media, and injecting whole events would muddy it.
+  // media, so a filtered view shows every matching frame loose.
   const groups = useMemo(
     () => (filtered ? group(media) : groupWithEvents(media, events, artifacts, done)),
     [media, events, artifacts, done, filtered],
   )
 
-  // Years that have content, grouped by decade — the rail. Volumes come from the
-  // grouped count so this is right even before the matching rows have loaded.
-  const rail = useMemo(() => {
-    const byYear = new Map<number, number>()
-    for (const bucket of monthCounts) {
-      byYear.set(bucket.year, (byYear.get(bucket.year) ?? 0) + bucket.count)
-    }
-    const years = [...byYear.entries()]
-      .map(([year, count]) => ({ year, count }))
-      .sort((a, b) => b.year - a.year)
-    const max = years.reduce((m, y) => Math.max(m, y.count), 1)
-    const decades = new Map<number, { year: number; count: number; weight: number }[]>()
-    for (const y of years) {
-      const decade = Math.floor(y.year / 10) * 10
-      const list = decades.get(decade) ?? []
-      list.push({ ...y, weight: Math.max(0.15, y.count / max) })
-      decades.set(decade, list)
-    }
-    return [...decades.entries()].map(([decade, entries]) => ({ decade, entries })).sort(
-      (a, b) => b.decade - a.decade,
-    )
+  // Years with content, newest first — the scrubber's source. Comes from the
+  // grouped count so it's complete before the matching rows have loaded.
+  const railYears = useMemo(() => {
+    const set = new Set<number>()
+    for (const bucket of monthCounts) if (bucket.count > 0) set.add(bucket.year)
+    return [...set].sort((a, b) => b - a)
   }, [monthCounts])
 
   const fetchPage = useCallback(
@@ -238,13 +323,16 @@ export function Timeline({
   }, [type, personId, fetchPage])
 
   const topRef = useRef<HTMLDivElement | null>(null)
-  function jumpToYear(year: number) {
-    void fetchPage({
-      cursor: { takenAt: new Date(Date.UTC(year + 1, 0, 1)).toISOString(), id: MAX_ID },
-      replace: true,
-    })
-    topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  const jumpToYear = useCallback(
+    (year: number) => {
+      void fetchPage({
+        cursor: { takenAt: new Date(Date.UTC(year + 1, 0, 1)).toISOString(), id: MAX_ID },
+        replace: true,
+      })
+      topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    },
+    [fetchPage],
+  )
 
   // Infinite scroll: load the next (older) page when the sentinel nears the view.
   const sentinel = useRef<HTMLDivElement | null>(null)
@@ -262,6 +350,29 @@ export function Timeline({
     observer.observe(node)
     return () => observer.disconnect()
   }, [cursor, loading, done, fetchPage])
+
+  // Mark the year the reader is currently passing, so the scrubber shows position.
+  const yearRefs = useRef(new Map<number, HTMLElement>())
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let best: number | null = null
+        let bestTop = Number.POSITIVE_INFINITY
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          const year = Number((entry.target as HTMLElement).dataset.year)
+          if (entry.boundingClientRect.top < bestTop) {
+            bestTop = entry.boundingClientRect.top
+            best = year
+          }
+        }
+        if (best !== null) setActiveYear(best)
+      },
+      { rootMargin: '-56px 0px -80% 0px', threshold: 0 },
+    )
+    for (const node of yearRefs.current.values()) observer.observe(node)
+    return () => observer.disconnect()
+  }, [groups])
 
   return (
     <div ref={topRef} className="pt-2">
@@ -311,35 +422,11 @@ export function Timeline({
             </select>
           )}
         </div>
-
-        {rail.length > 0 && (
-          <div className="mt-2 flex gap-3 overflow-x-auto pb-0.5">
-            {rail.map(({ decade, entries }) => (
-              <div key={decade} className="flex shrink-0 items-end gap-1.5">
-                <span className="meta-mono self-center pr-0.5 text-paper-faint">{decade}s</span>
-                {entries.map((entry) => (
-                  <button
-                    key={entry.year}
-                    type="button"
-                    onClick={() => jumpToYear(entry.year)}
-                    title={`${entry.year} · ${entry.count} ${entry.count === 1 ? 'item' : 'items'}`}
-                    className="group flex flex-col items-center gap-1"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="w-3 rounded-full bg-paper-faint/50 transition-colors group-hover:bg-paper"
-                      style={{ height: `${Math.round(6 + entry.weight * 18)}px` }}
-                    />
-                    <span className="text-[10px] text-paper-dim transition-colors group-hover:text-paper">
-                      {String(entry.year).slice(2)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
+
+      {railYears.length > 1 && (
+        <Scrubber years={railYears} activeYear={activeYear} onJump={jumpToYear} />
+      )}
 
       {error && (
         <p role="alert" className="mt-4 rounded-xl border border-red-300/25 px-4 py-3 text-sm text-red-100">
@@ -359,8 +446,16 @@ export function Timeline({
       ) : (
         <div className="mt-4">
           {groups.map((yg) => (
-            <section key={yg.year} aria-label={String(yg.year)}>
-              <div className="sticky top-[84px] z-20 -mx-5 flex items-center justify-between gap-3 bg-ink/92 px-5 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+            <section
+              key={yg.year}
+              aria-label={String(yg.year)}
+              data-year={yg.year}
+              ref={(node) => {
+                if (node) yearRefs.current.set(yg.year, node)
+                else yearRefs.current.delete(yg.year)
+              }}
+            >
+              <div className="sticky top-14 z-20 -mx-5 flex items-center justify-between gap-3 bg-ink/92 px-5 py-2 pr-10 backdrop-blur sm:-mx-6 sm:px-6 sm:pr-11">
                 <h2 className="font-display text-3xl tracking-[-0.02em] text-paper">{yg.year}</h2>
                 {(yg.band.length > 0 || yg.months.some((m) => m.grid.length + m.band.length > 0)) && (
                   <Link
@@ -372,58 +467,21 @@ export function Timeline({
                 )}
               </div>
 
-              {yg.band.length > 0 && (
-                <ApproximateBand
-                  label={`${yg.year} · dates approximate`}
-                  items={yg.band}
-                />
-              )}
-
-              {yg.months.map((mg) => (
-                <section
-                  key={`${mg.year}-${mg.month}`}
-                  aria-label={`${MONTHS[mg.month]} ${mg.year}`}
-                  style={{
-                    contentVisibility: 'auto',
-                    containIntrinsicSize: `0 ${estimateHeight(mg)}px`,
-                  }}
-                >
-                  <h3 className="mt-5 mb-3 text-sm font-medium tracking-[0.14em] text-paper-dim uppercase">
-                    {MONTHS[mg.month]}
-                  </h3>
-
-                  {mg.events.map((event) => (
-                    <AlbumCard key={event.id} event={event} />
-                  ))}
-
-                  {mg.artifacts.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {mg.artifacts.map((artifact) => (
-                        <ArtifactChip key={artifact.id} artifact={artifact} />
-                      ))}
-                    </div>
-                  )}
-
-                  {mg.band.length > 0 && (
-                    <ApproximateBand label={`${MONTHS[mg.month]} ${mg.year} · approximate`} items={mg.band} />
-                  )}
-
-                  <Grid>
-                    {mg.grid.map((item) => (
-                      <Tile key={item.id} media={item} />
-                    ))}
-                  </Grid>
-                </section>
-              ))}
+              <div className="pr-7">
+                {yg.band.length > 0 && (
+                  <ApproximateBand label={`${yg.year} · dates approximate`} items={yg.band} />
+                )}
+                {yg.months.map((mg) => (
+                  <MonthSection key={`${mg.year}-${mg.month}`} mg={mg} />
+                ))}
+              </div>
             </section>
           ))}
         </div>
       )}
 
       <div ref={sentinel} aria-hidden="true" className="h-px" />
-      {loading && (
-        <p className="py-8 text-center text-sm text-paper-faint">Loading…</p>
-      )}
+      {loading && <p className="py-8 text-center text-sm text-paper-faint">Loading…</p>}
       {done && groups.length > 0 && (
         <p className="py-8 text-center text-xs text-paper-faint">The beginning.</p>
       )}
@@ -431,10 +489,159 @@ export function Timeline({
   )
 }
 
+/** A month's content. Only the loose grid is capped — event cards, artifacts,
+ *  and soft-dated bands always show in full. */
+function MonthSection({ mg }: { mg: MonthGroup }) {
+  const [showAll, setShowAll] = useState(false)
+  const overflowing = mg.grid.length > MONTH_CAP
+  const grid = showAll ? mg.grid : mg.grid.slice(0, MONTH_CAP)
+
+  return (
+    <section
+      aria-label={`${MONTHS[mg.month]} ${mg.year}`}
+      // `auto` lets the browser remember a month's real rendered height, so
+      // expanding a card (or scrolling it off-screen while open) never shifts
+      // the rows below it. The estimate is only the first-paint placeholder.
+      style={{ contentVisibility: 'auto', containIntrinsicSize: `auto ${estimateHeight(mg)}px` }}
+    >
+      <h3 className="mt-5 mb-3 text-sm font-medium tracking-[0.14em] text-paper-dim uppercase">
+        {MONTHS[mg.month]}
+      </h3>
+
+      {mg.events.map((event) => (
+        <EventCard key={event.id} event={event} />
+      ))}
+
+      {mg.artifacts.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {mg.artifacts.map((artifact) => (
+            <ArtifactChip key={artifact.id} artifact={artifact} />
+          ))}
+        </div>
+      )}
+
+      {mg.band.length > 0 && (
+        <ApproximateBand label={`${MONTHS[mg.month]} ${mg.year} · approximate`} items={mg.band} />
+      )}
+
+      {grid.length > 0 && (
+        <Grid>
+          {grid.map((item) => (
+            <Tile key={item.id} media={item} />
+          ))}
+        </Grid>
+      )}
+
+      {overflowing && (
+        <button
+          type="button"
+          onClick={() => setShowAll((value) => !value)}
+          className="mt-3 w-full rounded-lg border border-edge py-2 text-sm text-paper-dim transition-colors hover:border-edge-strong hover:text-paper"
+        >
+          {showAll ? 'Show less' : `Show all ${mg.grid.length}`}
+        </button>
+      )}
+    </section>
+  )
+}
+
+/** The persistent year scrubber — a thin right rail, not a header row. Shows the
+ *  years that have content (grouped into decades once there are too many to
+ *  list), marks where you are, and jumps. */
+function Scrubber({
+  years,
+  activeYear,
+  onJump,
+}: {
+  years: number[]
+  activeYear: number | null
+  onJump: (year: number) => void
+}) {
+  const [openDecade, setOpenDecade] = useState<number | null>(null)
+  const decades = useMemo(() => {
+    const map = new Map<number, number[]>()
+    for (const year of years) {
+      const decade = Math.floor(year / 10) * 10
+      map.set(decade, [...(map.get(decade) ?? []), year])
+    }
+    return [...map.entries()]
+      .map(([decade, list]) => ({ decade, years: list.sort((a, b) => b - a) }))
+      .sort((a, b) => b.decade - a.decade)
+  }, [years])
+
+  const flat = years.length <= FLAT_YEARS
+  const activeDecade = activeYear !== null ? Math.floor(activeYear / 10) * 10 : null
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-40">
+      <div className="relative mx-auto h-full max-w-5xl">
+        <nav
+          aria-label="Jump to a year"
+          className="hide-scrollbar pointer-events-auto absolute top-1/2 right-1 flex max-h-[68vh] -translate-y-1/2 flex-col gap-px overflow-y-auto rounded-full border border-edge bg-ink/85 px-0.5 py-1.5 backdrop-blur"
+        >
+          {flat
+            ? years.map((year) => (
+                <YearChip key={year} year={year} active={year === activeYear} onJump={onJump} />
+              ))
+            : decades.map(({ decade, years: list }) => {
+                const shown = (openDecade ?? activeDecade) === decade
+                return (
+                  <div key={decade} className="flex flex-col">
+                    <button
+                      type="button"
+                      onClick={() => setOpenDecade((current) => (current === decade ? null : decade))}
+                      aria-expanded={shown}
+                      className={`rounded-full px-1.5 text-center text-[10px] tabular-nums transition-colors ${
+                        decade === activeDecade ? 'font-semibold text-paper' : 'text-paper-faint hover:text-paper'
+                      }`}
+                      style={{ minHeight: '1.15rem', lineHeight: '1.15rem' }}
+                    >
+                      {String(decade).slice(2)}s
+                    </button>
+                    {shown &&
+                      list.map((year) => (
+                        <YearChip key={year} year={year} active={year === activeYear} small onJump={onJump} />
+                      ))}
+                  </div>
+                )
+              })}
+        </nav>
+      </div>
+    </div>
+  )
+}
+
+function YearChip({
+  year,
+  active,
+  small,
+  onJump,
+}: {
+  year: number
+  active: boolean
+  small?: boolean
+  onJump: (year: number) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onJump(year)}
+      aria-current={active ? 'true' : undefined}
+      title={String(year)}
+      className={`rounded-full text-center tabular-nums transition-colors ${
+        small ? 'px-1 text-[9px]' : 'px-1.5 text-[10px]'
+      } ${active ? 'bg-white/15 font-semibold text-paper' : 'text-paper-faint hover:text-paper'}`}
+      style={{ minHeight: '1.15rem', lineHeight: '1.15rem' }}
+    >
+      &rsquo;{String(year).slice(2)}
+    </button>
+  )
+}
+
 function estimateHeight(mg: MonthGroup): number {
-  const tiles = mg.grid.length + mg.band.length
+  const tiles = Math.min(mg.grid.length, MONTH_CAP) + mg.band.length
   const rows = Math.ceil(tiles / 3)
-  return 60 + mg.events.length * 64 + (mg.artifacts.length ? 48 : 0) + rows * 128
+  return 60 + mg.events.length * 210 + (mg.artifacts.length ? 48 : 0) + rows * 128
 }
 
 function Grid({ children }: { children: React.ReactNode }) {
@@ -516,61 +723,98 @@ function ApproximateBand({ label, items }: { label: string; items: MediaView[] }
   )
 }
 
+/** A peek inside a collapsed event — a short filmstrip of what's in there. */
+function PreviewStrip({ preview }: { preview: string[] }) {
+  return (
+    <div className="grid grid-flow-col auto-cols-fr gap-px border-t border-edge/60">
+      {preview.slice(0, 5).map((url, index) => (
+        <span key={index} className="relative block aspect-square overflow-hidden bg-ink-high">
+          <img
+            src={url}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        </span>
+      ))}
+    </div>
+  )
+}
+
 /**
- * An album/event as a grouped card at its place in the month — a lens over the
- * timeline, never a container: its photos also appear individually in the grid.
- * Expands in place (no navigation) to show the whole album.
+ * A completed event, sitting at its date. Collapsed by default: title, when,
+ * how many, and a filmstrip of the first few. The whole header is the tap
+ * target; expanding reveals the full grid *in place* — no navigation, no scroll
+ * jump — and the open/closed choice is remembered for the session.
  */
-function AlbumCard({ event }: { event: { id: string; name: string; cover: string | null; count: number } }) {
-  const [open, setOpen] = useState(false)
+function EventCard({ event }: { event: TimelineEventCard }) {
+  const [open, toggle] = useEventOpen(event.id)
   const [items, setItems] = useState<MediaView[] | null>(null)
   const [loading, setLoading] = useState(false)
 
-  async function toggle() {
-    const next = !open
-    setOpen(next)
-    if (next && !items && !loading) {
+  // Fetch the full album once, the first time it opens (whether by tap or by a
+  // restored session). setState stays inside the async closure, off the effect
+  // body, so it's a genuine external-load sync rather than a cascading render.
+  useEffect(() => {
+    if (!open || items !== null) return
+    let active = true
+    void (async () => {
       setLoading(true)
       try {
         const response = await fetch(`/api/feed?event=${event.id}&limit=60`)
         const payload = (await response.json()) as { media?: MediaView[] }
-        setItems(payload.media ?? [])
+        if (active) setItems(payload.media ?? [])
       } catch {
-        setItems([])
+        if (active) setItems([])
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
+    })()
+    return () => {
+      active = false
     }
-  }
+  }, [open, items, event.id])
+
+  const emoji = isEmojiOnly(event.name)
+  const when = fullDate(showDate(event.date))
+  const countLabel =
+    event.count > 0 ? `${event.count} ${event.count === 1 ? 'memory' : 'memories'}` : 'No memories yet'
 
   return (
     <div className="mt-3 overflow-hidden rounded-xl border border-edge bg-ink-raised">
-      <button
-        type="button"
-        onClick={() => void toggle()}
-        aria-expanded={open}
-        className="flex w-full items-center gap-3 p-2.5 text-left transition-colors hover:bg-ink-hover"
-      >
-        <EventCover
-          src={event.cover}
-          name={event.name}
-          className="relative size-12 shrink-0 overflow-hidden rounded-lg object-cover text-[10px]"
-        />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium text-paper">{event.name}</span>
-          <span className="meta-mono text-paper-faint">
-            {event.count > 0
-              ? `${event.count} ${event.count === 1 ? 'item' : 'items'} this month`
-              : 'Event · tap to open'}
+      <button type="button" onClick={toggle} aria-expanded={open} className="block w-full text-left">
+        <div className="flex items-center gap-3 px-3 py-2.5">
+          <span className="min-w-0 flex-1">
+            <span className={`block truncate ${emoji ? 'text-2xl leading-tight' : 'font-medium text-paper'}`}>
+              {event.name.trim() || 'Untitled event'}
+            </span>
+            <span className="meta-mono mt-0.5 block text-paper-faint">
+              {when} · {countLabel}
+            </span>
           </span>
-        </span>
-        <span aria-hidden="true" className={`text-paper-faint transition-transform ${open ? 'rotate-180' : ''}`}>
-          ⌄
-        </span>
+          <span
+            aria-hidden="true"
+            className={`shrink-0 text-paper-faint transition-transform ${open ? 'rotate-180' : ''}`}
+          >
+            ⌄
+          </span>
+        </div>
+        {!open &&
+          (event.preview.length > 0 ? (
+            <PreviewStrip preview={event.preview} />
+          ) : (
+            <EventCover
+              src={event.cover}
+              name={event.name.trim() || 'Event'}
+              className="relative block aspect-[3/2] w-full border-t border-edge/60 text-base"
+            />
+          ))}
       </button>
+
       {open && (
-        <div className="border-t border-edge p-2.5">
-          {loading && <p className="py-3 text-center text-xs text-paper-faint">Loading album…</p>}
+        <div className="border-t border-edge p-3">
+          {loading && <p className="py-3 text-center text-xs text-paper-faint">Loading…</p>}
           {items && items.length > 0 && (
             <Grid>
               {items.map((item) => (
@@ -579,13 +823,13 @@ function AlbumCard({ event }: { event: { id: string; name: string; cover: string
             </Grid>
           )}
           {items && items.length === 0 && !loading && (
-            <p className="py-3 text-center text-xs text-paper-faint">This album is empty.</p>
+            <p className="py-3 text-center text-xs text-paper-faint">Nothing added to this event yet.</p>
           )}
           <Link
             href={`/collection/event/${event.id}`}
-            className="mt-2 block text-center text-xs text-paper-dim transition-colors hover:text-paper"
+            className="mt-3 block text-center text-xs text-paper-dim transition-colors hover:text-paper"
           >
-            Open album →
+            Open event →
           </Link>
         </div>
       )}

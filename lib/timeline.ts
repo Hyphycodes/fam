@@ -3,6 +3,7 @@ import 'server-only'
 import type { DB } from '@/lib/api'
 import { hydrate } from '@/lib/queries'
 import { presignGet } from '@/lib/r2'
+import { playbackUrls } from '@/lib/stream'
 import { isConfigured } from '@/lib/env'
 import type { ArtifactType, MediaRow, MediaView } from '@/lib/types'
 
@@ -42,13 +43,38 @@ export interface TimelineEvent {
   /** When it happened — the date it sits at in the timeline. */
   date: string
   cover_url: string | null
+  /** How many ready memories live inside — the collapsed card's count. */
+  count: number
+  /** Up to five thumbnails for the collapsed card's preview strip. */
+  preview: string[]
+}
+
+/** A media row's thumbnail, from Stream poster or the R2 thumb/display key. */
+function thumbForMedia(
+  row: {
+    stream_uid?: string | null
+    poster_url?: string | null
+    r2_thumb_key?: string | null
+    r2_display_key?: string | null
+  },
+  ready: { r2: boolean; stream: boolean },
+): Promise<string | null> {
+  if (row.stream_uid && ready.stream) {
+    return Promise.resolve(row.poster_url ?? playbackUrls(row.stream_uid).poster)
+  }
+  if (ready.r2) {
+    const key = row.r2_thumb_key ?? row.r2_display_key
+    return key ? presignGet(key) : Promise.resolve(null)
+  }
+  return Promise.resolve(null)
 }
 
 /**
  * Completed board events, so a just-completed event appears in the timeline at
- * its date even before anyone has added a photo to it. Bounded (there are never
- * many events), so covers are resolved directly. Planned events are excluded —
- * the future belongs to the Board, not the Timeline.
+ * its date even before anyone has added a photo to it, and so its media renders
+ * *only* inside its card (never loose in the grid too). Bounded (there are never
+ * many events), so counts, covers, and a preview strip are resolved directly.
+ * Planned events are excluded — the future belongs to the Board, not the Timeline.
  */
 export async function getTimelineEvents(db: DB): Promise<TimelineEvent[]> {
   const { data } = await db
@@ -67,21 +93,64 @@ export async function getTimelineEvents(db: DB): Promise<TimelineEvent[]> {
   }[]
   if (events.length === 0) return []
 
+  const ready = { r2: isConfigured('r2'), stream: isConfigured('stream') }
+  const ids = events.map((e) => e.id)
+
+  // One trip for every event's media (ordered newest-first), grouped in JS: the
+  // count is exact and the first few become the preview strip.
+  const { data: mediaRows } = await db
+    .from('media')
+    .select('id, event_id, stream_uid, poster_url, r2_thumb_key, r2_display_key, taken_at')
+    .in('event_id', ids)
+    .eq('status', 'ready')
+    .order('taken_at', { ascending: false })
+
+  type MediaBit = {
+    id: string
+    event_id: string
+    stream_uid: string | null
+    poster_url: string | null
+    r2_thumb_key: string | null
+    r2_display_key: string | null
+  }
+  const byEvent = new Map<string, MediaBit[]>()
+  for (const row of (mediaRows ?? []) as MediaBit[]) {
+    const list = byEvent.get(row.event_id) ?? []
+    list.push(row)
+    byEvent.set(row.event_id, list)
+  }
+
+  // A deliberately chosen cover wins over the newest frame.
   const coverIds = [...new Set(events.map((e) => e.cover_media_id).filter(Boolean))] as string[]
-  const coverUrl = new Map<string, string | null>()
+  const coverThumb = new Map<string, string | null>()
   if (coverIds.length) {
-    const { data: coverRows } = await db.from('media').select('*').in('id', coverIds).eq('status', 'ready')
-    for (const view of await hydrate(db, (coverRows ?? []) as MediaRow[])) {
-      coverUrl.set(view.id, view.thumb_url ?? view.display_url)
+    const { data: coverRows } = await db
+      .from('media')
+      .select('id, stream_uid, poster_url, r2_thumb_key, r2_display_key')
+      .in('id', coverIds)
+      .eq('status', 'ready')
+    for (const row of (coverRows ?? []) as MediaBit[]) {
+      coverThumb.set(row.id, await thumbForMedia(row, ready))
     }
   }
 
-  return events.map((event) => ({
-    id: event.id,
-    name: event.name,
-    date: event.event_date ?? event.created_at,
-    cover_url: event.cover_media_id ? (coverUrl.get(event.cover_media_id) ?? null) : null,
-  }))
+  return Promise.all(
+    events.map(async (event): Promise<TimelineEvent> => {
+      const rows = byEvent.get(event.id) ?? []
+      const preview = (
+        await Promise.all(rows.slice(0, 5).map((row) => thumbForMedia(row, ready)))
+      ).filter((url): url is string => Boolean(url))
+      const explicit = event.cover_media_id ? (coverThumb.get(event.cover_media_id) ?? null) : null
+      return {
+        id: event.id,
+        name: event.name,
+        date: event.event_date ?? event.created_at,
+        cover_url: explicit ?? preview[0] ?? null,
+        count: rows.length,
+        preview,
+      }
+    }),
+  )
 }
 
 export interface TimelineArtifact {
