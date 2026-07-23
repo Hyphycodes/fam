@@ -143,7 +143,9 @@ export function CoverTile({
       {source ? (
         <img src={source} alt="" loading="lazy" decoding="async" />
       ) : (
-        <span className="block h-full w-full bg-ink-high" />
+        <span className="grid h-full w-full place-items-center bg-ink-high text-3xl font-semibold text-white/15">
+          {label.charAt(0)}
+        </span>
       )}
       <span className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-transparent" />
       <span className="absolute inset-x-0 bottom-0 px-3 pb-2">

@@ -17,11 +17,14 @@ export function Artifacts({
   artifacts,
   canEdit,
   planned,
+  defaultCompose = false,
 }: {
   eventId: string
   artifacts: ArtifactView[]
   canEdit: boolean
   planned: boolean
+  /** Deep-link from the (+) action sheet: open the composer on arrival. */
+  defaultCompose?: boolean
 }) {
   const [zoom, setZoom] = useState<ArtifactView | null>(null)
 
@@ -57,7 +60,7 @@ export function Artifacts({
         </p>
       )}
 
-      {canEdit && <ArtifactComposer eventId={eventId} />}
+      {canEdit && <ArtifactComposer eventId={eventId} defaultOpen={defaultCompose} />}
 
       {zoom?.href && <ZoomOverlay artifact={zoom} onClose={() => setZoom(null)} />}
     </section>
@@ -295,9 +298,9 @@ function guessMime(name: string): string {
   )
 }
 
-function ArtifactComposer({ eventId }: { eventId: string }) {
+function ArtifactComposer({ eventId, defaultOpen = false }: { eventId: string; defaultOpen?: boolean }) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const [kind, setKind] = useState<ArtifactType>('image_doc')
   const [file, setFile] = useState<File | null>(null)
   const [url, setUrl] = useState('')

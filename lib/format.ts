@@ -196,6 +196,18 @@ export function duration(seconds: number | null | undefined): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+/**
+ * A title made entirely of emoji ("🏆") — rendered at display size in the slot
+ * a text title would occupy, rather than as a bare little glyph. Allows the
+ * joiners and variation selectors that compose emoji (ZWJ, U+FE0F) plus
+ * whitespace; anything with a letter or digit is a normal title.
+ */
+const EMOJI_ONLY = /^[\p{Extended_Pictographic}\u200d\uFE0F\s]+$/u
+export function isEmojiOnly(value: string): boolean {
+  const trimmed = value.trim()
+  return trimmed.length > 0 && EMOJI_ONLY.test(trimmed)
+}
+
 /** "Mom, Dad and 2 others" */
 export function nameList(names: string[], max = 2): string {
   if (names.length === 0) return ''

@@ -1,17 +1,17 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Shell } from '@/components/Shell'
-import { VideoFrame } from '@/components/VideoFrame'
 import { Rail, MediaTile } from '@/components/Rail'
 import { EventCover } from '@/components/EventCover'
 import { Avatar } from '@/components/Avatar'
 import { AddMemoriesButton } from '@/components/AddMemories'
+import { FeaturedMemory } from '@/components/FeaturedMemory'
 import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
 import { reconcileProcessingVideos } from '@/lib/reconcile'
 import { readDb } from '@/lib/db'
 import { getHomeData } from '@/lib/home'
-import { formatCapturedAt, fullDate, season } from '@/lib/format'
+import { fullDate } from '@/lib/format'
 import type { BoardEvent, MediaView } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -41,7 +41,7 @@ export default async function HomePage() {
 
   return (
     <Shell viewer={viewer} immersive={Boolean(home.featured)}>
-      {home.featured && <Billboard media={home.featured} />}
+      {home.featured && <FeaturedMemory pool={home.featuredPool} initial={home.featured} />}
 
       <div className="mt-10 flex flex-col gap-14 sm:mt-12 sm:gap-16">
         {home.onThisDay.length > 0 && (
@@ -86,12 +86,25 @@ export default async function HomePage() {
 
         <section aria-labelledby="collections">
           <Heading id="collections" eyebrow="The archive" title="Collections" />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <NavTile href="/timeline?type=photo" title="Photos" detail="Every still" />
-            <NavTile href="/timeline?type=video" title="Videos" detail="Every clip" />
-            <NavTile href="/albums" title="Events" detail="Every gathering" />
-            <NavTile href="/community" title="Board" detail="What's planned" />
-            <NavTile href="/community" title="Artifacts" detail="Flyers & more" />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <CollectionTile
+              href="/timeline?type=photo"
+              title="Photos"
+              detail="Every still"
+              images={home.collections.photos}
+            />
+            <CollectionTile
+              href="/timeline?type=video"
+              title="Videos"
+              detail="Every clip"
+              images={home.collections.video ? [home.collections.video] : []}
+            />
+            <CollectionTile
+              href="/community"
+              title="Artifacts"
+              detail="Flyers &amp; menus"
+              images={home.collections.artifact ? [home.collections.artifact] : []}
+            />
           </div>
         </section>
       </div>
@@ -187,7 +200,7 @@ function FamilyTV({ cover }: { cover: MediaView | null }) {
           className="absolute inset-0 h-full w-full object-cover opacity-70 transition-transform duration-[1400ms] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.03]"
         />
       ) : (
-        <span className="absolute inset-0 bg-ink-high" />
+        <span className="absolute inset-0 bg-ink-raised bg-[radial-gradient(circle_at_50%_30%,rgba(255,255,255,0.08),transparent_60%)]" />
       )}
       <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/20" />
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
@@ -201,78 +214,65 @@ function FamilyTV({ cover }: { cover: MediaView | null }) {
   )
 }
 
-function NavTile({ href, title, detail }: { href: string; title: string; detail: string }) {
+/** A Collections tile — navigation, not content. Square, 2-up on mobile, and
+ *  never grey: a mosaic of four when there are four, a single frame when there's
+ *  one, the typographic treatment when there's nothing. */
+function CollectionTile({
+  href,
+  title,
+  detail,
+  images,
+}: {
+  href: string
+  title: string
+  detail: string
+  images: string[]
+}) {
   return (
     <Link
       href={href}
-      className="group relative flex aspect-[4/3] flex-col justify-end overflow-hidden rounded-xl border border-edge bg-ink-raised p-4 transition-colors hover:bg-ink-high"
+      className="tile group relative block aspect-square overflow-hidden rounded-xl border border-edge"
     >
-      <span className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.05),transparent_50%)]" />
-      <span className="relative block text-lg font-semibold tracking-[-0.02em] text-paper">{title}</span>
-      <span className="relative mt-0.5 block text-xs text-paper-faint">{detail}</span>
+      <CollectionCover images={images} label={title} />
+      <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-transparent" />
+      <span className="absolute inset-x-0 bottom-0 p-3">
+        <span className="block text-base font-semibold tracking-[-0.02em] text-white">{title}</span>
+        <span className="meta-mono block text-white/60">{detail}</span>
+      </span>
     </Link>
   )
 }
 
-function Billboard({ media }: { media: MediaView }) {
-  const still = media.display_url ?? media.thumb_url
-  const title = media.caption || media.event_name || season(media.taken_at)
-
-  return (
-    <section className="full-bleed relative overflow-hidden bg-ink-raised">
-      <div className="relative h-[68svh] max-h-[42rem] min-h-[26rem]">
-        {media.type === 'video' && media.iframe_url ? (
-          <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-            <VideoFrame
-              src={media.iframe_url}
-              poster={still}
-              autoplay
-              muted
-              loop
-              controls={false}
-              className="h-full w-full scale-[1.35] object-cover sm:scale-100"
-              title=""
+function CollectionCover({ images, label }: { images: string[]; label: string }) {
+  if (images.length >= 4) {
+    return (
+      <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 gap-px">
+        {images.slice(0, 4).map((src, index) => (
+          <span key={index} className="relative block overflow-hidden bg-ink-high">
+            <img
+              src={src}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="absolute inset-0 h-full w-full object-cover"
             />
-          </div>
-        ) : still ? (
-          <img src={still} alt="" fetchPriority="high" className="absolute inset-0 h-full w-full object-cover animate-fade" />
-        ) : null}
-
-        <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-ink/70 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-ink via-ink/45 to-transparent" />
-
-        <div className="absolute inset-x-0 bottom-0 mx-auto w-full max-w-5xl px-5 pb-8 sm:px-6 sm:pb-12">
-          <p className="eyebrow animate-rise text-white/60">Featured memory</p>
-          <h1
-            className="mt-2 max-w-2xl text-[clamp(1.85rem,5.5vw,3.25rem)] leading-[1.05] font-semibold tracking-[-0.025em] text-white text-balance animate-rise"
-            style={{ animationDelay: '60ms' }}
-          >
-            {title}
-          </h1>
-          <p
-            className="meta-mono mt-2.5 flex flex-wrap items-center gap-x-2 text-white/60 animate-rise"
-            style={{ animationDelay: '120ms' }}
-          >
-            {formatCapturedAt(media.taken_at, media.taken_precision)}
-            {media.event_name && media.event_name !== title && (
-              <>
-                <span className="text-white/30">·</span>
-                {media.event_name}
-              </>
-            )}
-          </p>
-          <div className="mt-5 flex items-center gap-3 animate-rise" style={{ animationDelay: '180ms' }}>
-            <Link href={`/m/${media.id}`} className="btn btn-primary">
-              <PlayGlyph /> Open
-            </Link>
-            <Link href="/movie?source=archive&mode=shuffle" className="btn btn-ghost backdrop-blur-sm">
-              Shuffle
-            </Link>
-          </div>
-        </div>
+          </span>
+        ))}
       </div>
-    </section>
-  )
+    )
+  }
+  if (images.length >= 1) {
+    return (
+      <img
+        src={images[0]}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+    )
+  }
+  return <EventCover src={null} name={label} className="absolute inset-0 h-full w-full text-2xl" />
 }
 
 function PlayGlyph({ className }: { className?: string } = {}) {

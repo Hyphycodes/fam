@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { duration, formatCapturedAt, fullDate } from '@/lib/format'
+import { duration, formatCapturedAt, fullDate, isEmojiOnly } from '@/lib/format'
 import { EventCover } from '@/components/EventCover'
 import type { MediaView } from '@/lib/types'
 import type { MonthCount, TimelineArtifact, TimelineCursor, TimelineEvent } from '@/lib/timeline'
@@ -56,15 +56,6 @@ interface YearGroup {
   year: number
   band: MediaView[] // year-precision items — surfaced at the top of the year
   months: MonthGroup[]
-}
-
-/** A title made entirely of emoji ("🏆") gets rendered at display size, not as
- *  a bare little glyph on a text line. Allows pictographs plus the joiners and
- *  variation selectors that compose them (ZWJ, U+FE0F) and whitespace. */
-const EMOJI_ONLY = /^[\p{Extended_Pictographic}\u200d\uFE0F\s]+$/u
-function isEmojiOnly(name: string): boolean {
-  const trimmed = name.trim()
-  return trimmed.length > 0 && EMOJI_ONLY.test(trimmed)
 }
 
 /** Placement parse (UTC noon), so an event lands in the same month bucket the

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { UploadQueue, type UploadContext, type UploadItem } from '@/lib/client/uploader'
 import { UploadDetailsSheet } from '@/components/UploadDetailsSheet'
@@ -44,6 +44,18 @@ function useUploads(): UploadItem[] {
   )
 }
 
+/** The board-event or event-collection id the viewer is currently inside, so a
+ *  tap on (+) can pre-select it as the destination. */
+function eventIdFromPath(pathname: string | null): string | null {
+  if (!pathname) return null
+  const uuid = '([0-9a-fA-F-]{36})'
+  return (
+    pathname.match(new RegExp(`^/community/${uuid}`))?.[1] ??
+    pathname.match(new RegExp(`^/collection/event/${uuid}`))?.[1] ??
+    null
+  )
+}
+
 export function AddMemoriesButton({
   context,
   variant = 'nav',
@@ -53,7 +65,17 @@ export function AddMemoriesButton({
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [pending, setPending] = useState<File[] | null>(null)
-  const anonymous = Boolean(context?.linkToken)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const pathname = usePathname()
+
+  // Inside an event, that event becomes the upload (and artifact) destination.
+  const currentEventId = eventIdFromPath(pathname)
+  const uploadContext = context ?? (currentEventId ? { eventId: currentEventId } : undefined)
+  const anonymous = Boolean(uploadContext?.linkToken)
+
+  // The (+) is a menu (photos, an event, an artifact) — but a guest link and the
+  // explicit "Add items" CTAs go straight to the picker.
+  const menu = variant === 'nav' && !anonymous
 
   const pick = useCallback(() => {
     input.current?.click()
@@ -80,13 +102,24 @@ export function AddMemoriesButton({
       {pending && (
         <UploadDetailsSheet
           initialFiles={pending}
-          context={context}
+          context={uploadContext}
           anonymous={anonymous}
           onCancel={() => setPending(null)}
-          onConfirm={(drafts, uploadContext) => {
-            queue.add(drafts, uploadContext)
+          onConfirm={(drafts, confirmedContext) => {
+            queue.add(drafts, confirmedContext)
             setPending(null)
           }}
+        />
+      )}
+
+      {sheetOpen && (
+        <AddActionSheet
+          eventId={currentEventId}
+          onAddMedia={() => {
+            setSheetOpen(false)
+            pick()
+          }}
+          onClose={() => setSheetOpen(false)}
         />
       )}
 
@@ -96,8 +129,9 @@ export function AddMemoriesButton({
         </button>
       ) : (
         <button
-          onClick={pick}
-          aria-label="Add photos or videos"
+          onClick={() => (menu ? setSheetOpen(true) : pick())}
+          aria-label="Add to the archive"
+          aria-haspopup={menu ? 'menu' : undefined}
           className="dock-add mx-0.5 flex h-[3.65rem] w-[3.65rem] flex-col items-center justify-center gap-0.5 rounded-full bg-white text-ink shadow-[0_8px_24px_-8px_rgba(0,0,0,0.9)] transition-transform hover:scale-[1.035] active:scale-95 sm:mx-1"
         >
           <svg
@@ -118,6 +152,119 @@ export function AddMemoriesButton({
 
       {(variant === 'nav' || anonymous) && <UploadTray />}
     </>
+  )
+}
+
+/**
+ * The (+) menu. Adding photos or videos is the default and comes first; below it
+ * are the two other things that keep an archive organized instead of a loose
+ * pile — planning or recording an event, and attaching an artifact (a flyer,
+ * menu, screenshot, or link). Inside an event, those actions target it.
+ */
+function AddActionSheet({
+  eventId,
+  onAddMedia,
+  onClose,
+}: {
+  eventId: string | null
+  onAddMedia: () => void
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const artifactHref = eventId ? `/community/${eventId}?compose=artifact` : '/community'
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center" role="dialog" aria-modal="true" aria-label="Add">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/55 backdrop-blur-sm"
+      />
+      <div className="animate-rise pointer-events-auto relative mb-[calc(6rem+env(safe-area-inset-bottom))] w-full max-w-sm px-4 sm:mb-32">
+        <div className="overflow-hidden rounded-2xl border border-edge bg-ink-raised/95 shadow-2xl backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={onAddMedia}
+            className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-ink-hover"
+          >
+            <SheetGlyph>
+              <path d="M12 5v14M5 12h14" />
+            </SheetGlyph>
+            <span>
+              <span className="block font-medium text-paper">Add photos or videos</span>
+              <span className="block text-xs text-paper-faint">
+                {eventId ? 'Straight into this event' : 'From your library'}
+              </span>
+            </span>
+          </button>
+
+          <Link
+            href="/community?create=1"
+            onClick={onClose}
+            className="flex items-center gap-3 border-t border-edge px-5 py-4 transition-colors hover:bg-ink-hover"
+          >
+            <SheetGlyph>
+              <rect x="3.75" y="4.75" width="16.5" height="15.5" rx="2" />
+              <path d="M3.75 9h16.5M8 3.5v3M16 3.5v3" />
+            </SheetGlyph>
+            <span>
+              <span className="block font-medium text-paper">Create an event</span>
+              <span className="block text-xs text-paper-faint">A plan, or something that happened</span>
+            </span>
+          </Link>
+
+          <Link
+            href={artifactHref}
+            onClick={onClose}
+            className="flex items-center gap-3 border-t border-edge px-5 py-4 transition-colors hover:bg-ink-hover"
+          >
+            <SheetGlyph>
+              <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h9L20 9.5V18.5A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5z" />
+              <path d="M14 4v6h6" />
+            </SheetGlyph>
+            <span>
+              <span className="block font-medium text-paper">Add an artifact</span>
+              <span className="block text-xs text-paper-faint">Flyer, menu, screenshot, or link</span>
+            </span>
+          </Link>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-2 w-full rounded-2xl border border-edge bg-ink-raised/95 py-3.5 text-center font-medium text-paper-dim backdrop-blur-xl transition-colors hover:text-paper"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SheetGlyph({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ink-high text-paper">
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        {children}
+      </svg>
+    </span>
   )
 }
 

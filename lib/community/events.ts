@@ -8,15 +8,16 @@ import { isConfigured } from '@/lib/env'
 import type { BoardEvent, EventRow } from '@/lib/types'
 
 /**
- * The community board — now the *planning* surface.
+ * The community board — the *event* surface.
  *
- * It holds what hasn't happened yet: events that are still planned (and, later,
- * upcoming/live). Completed events leave the board and live in the Timeline.
- * A planned event's face is its flyer — the artwork you made for it — falling
- * back to the newest frame in its album if one somehow exists.
+ * Board is event-first (Timeline is media-first). Planned events are what
+ * hasn't happened yet; past events are everything completed. Each event's face
+ * is its flyer — the artwork you made for it — falling back to the newest frame
+ * in its album.
  *
- * Ordered soonest-intended first (a plan with a date beats an open-ended one),
- * then newest.
+ * Planned: soonest-intended first (a plan with a date beats an open-ended one,
+ * but an open-ended "someday" still sorts above dated ones — an undated plan is
+ * a good, live state), then newest.
  */
 export async function getBoardEvents(db: DB): Promise<BoardEvent[]> {
   const { data } = await db
@@ -25,16 +26,37 @@ export async function getBoardEvents(db: DB): Promise<BoardEvent[]> {
     .eq('kind', 'event')
     .neq('status', 'completed')
     .is('merged_into', null)
-    .order('starts_at', { ascending: true, nullsFirst: false })
+    .order('starts_at', { ascending: true, nullsFirst: true })
     .order('created_at', { ascending: false })
 
-  const events = (data ?? []) as EventRow[]
+  return resolveEvents(db, (data ?? []) as EventRow[])
+}
+
+/**
+ * Everything that has happened — completed events, most recent first. The Board
+ * shows these below the plans, in a denser grid; the Timeline threads their
+ * media into the scroll, but the Board keeps them as whole events.
+ */
+export async function getPastEvents(db: DB): Promise<BoardEvent[]> {
+  const { data } = await db
+    .from('events')
+    .select('*')
+    .eq('kind', 'event')
+    .eq('status', 'completed')
+    .is('merged_into', null)
+    .order('event_date', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+
+  return resolveEvents(db, (data ?? []) as EventRow[])
+}
+
+/** Resolve a set of event rows into board cards: a cover candidate and counts,
+ *  in a couple of round trips rather than per-card queries. */
+async function resolveEvents(db: DB, events: EventRow[]): Promise<BoardEvent[]> {
   if (events.length === 0) return []
 
   const ids = events.map((e) => e.id)
 
-  // Media counts + a cover candidate per event, and comment counts, in a couple
-  // of round trips rather than per-card queries.
   const [{ data: mediaRows }, { data: commentRows }, hosts] = await Promise.all([
     db
       .from('media')

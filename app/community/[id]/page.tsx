@@ -26,11 +26,18 @@ export const dynamic = 'force-dynamic'
  * it becomes the memory: the same flyer and comments, now with the album and
  * everyone's photos. Completion never deletes the planning stage.
  */
-export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EventPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<Record<string, string | undefined>>
+}) {
   if (!isConfigured('supabase')) redirect('/setup')
 
   const viewer = await requireViewer()
   const { id } = await params
+  const composeArtifact = (await searchParams).compose === 'artifact'
   const db = readDb()
 
   const event = await getCollectionById(db, id)
@@ -107,7 +114,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
 
       {planned ? (
         <>
-          <Artifacts eventId={event.id} artifacts={artifacts} canEdit planned />
+          <Artifacts eventId={event.id} artifacts={artifacts} canEdit planned defaultCompose={composeArtifact} />
           <p className="mt-8 rounded-xl border border-dashed border-edge px-5 py-6 text-center text-sm text-paper-dim">
             Photos and videos land here once it happens. For now, it&rsquo;s a plan — react and talk
             it through above.
@@ -145,7 +152,13 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
               }
             />
           </section>
-          <Artifacts eventId={event.id} artifacts={artifacts} canEdit planned={false} />
+          <Artifacts
+            eventId={event.id}
+            artifacts={artifacts}
+            canEdit
+            planned={false}
+            defaultCompose={composeArtifact}
+          />
         </>
       )}
     </Shell>

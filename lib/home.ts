@@ -4,6 +4,8 @@ import type { DB } from '@/lib/api'
 import { getBoardEvents } from '@/lib/community/events'
 import { getFeed, getOnThisDay, getYears } from '@/lib/queries'
 import { dailyIndex } from '@/lib/format'
+import { presignGet } from '@/lib/r2'
+import { isConfigured } from '@/lib/env'
 import type { BoardEvent, MediaView } from '@/lib/types'
 
 /**
@@ -21,12 +23,44 @@ import type { BoardEvent, MediaView } from '@/lib/types'
  */
 
 export interface HomeData {
+  /** The server's first-paint pick (stable within a day) — the SSR frame. */
   featured: MediaView | null
+  /** The weighted candidate set the client rotates through, never repeating. */
+  featuredPool: MediaView[]
   onThisDay: MediaView[]
   comingUp: BoardEvent[]
   jumpBack: { year: number; count: number }[]
   recentlyAdded: MediaView[]
   hasMedia: boolean
+  /** Real covers for the Collections tiles, so none of them renders grey. */
+  collections: {
+    /** Up to four recent photo thumbs — a mosaic that says "many". */
+    photos: string[]
+    /** The most recent video's poster. */
+    video: string | null
+    /** The most recent flyer. */
+    artifact: string | null
+  }
+}
+
+const FEATURED_POOL_SIZE = 16
+
+function thumbOf(media: MediaView): string | null {
+  return media.thumb_url ?? media.display_url
+}
+
+/** The most recent flyer (or scanned doc), presigned — the Artifacts tile's cover. */
+async function recentFlyer(db: DB): Promise<string | null> {
+  if (!isConfigured('r2')) return null
+  const { data } = await db
+    .from('event_artifacts')
+    .select('storage_key, type')
+    .in('type', ['flyer', 'image_doc'])
+    .not('storage_key', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const key = (data ?? [])[0]?.storage_key as string | undefined
+  return key ? presignGet(key) : null
 }
 
 const highPrecision = (media: MediaView) =>
@@ -44,27 +78,41 @@ function uniqueById(items: MediaView[]): MediaView[] {
 }
 
 export async function getHomeData(db: DB): Promise<HomeData> {
-  const [onThisDayPool, recentPool, planned, years] = await Promise.all([
+  const [onThisDayPool, recentPool, planned, years, artifact] = await Promise.all([
     getOnThisDay(db), // already excludes approximate dates
     getFeed(db, { limit: 96, order: 'newest' }),
     getBoardEvents(db), // planned events (the Board holds the future)
     getYears(db),
+    recentFlyer(db),
   ])
 
   const used = new Set<string>()
 
-  // 1. Featured — rotate daily through a weighted candidate pool: on-this-day
-  //    first, then favourites, then any high-precision memory, then anything.
-  //    dailyIndex gives a stable pick that changes each day (a "not shown
-  //    recently" signal without per-user tracking).
+  // 1. Featured — a weighted candidate pool: on-this-day first, then favourites,
+  //    then any high-precision memory, then anything. The server picks a stable
+  //    first frame (dailyIndex) for SSR; the client rotates through the rest,
+  //    dissolving on load and while idle, never repeating the previous pick.
   const pool = uniqueById([
     ...onThisDayPool,
     ...recentPool.filter((media) => media.favorite && highPrecision(media)),
     ...recentPool.filter(highPrecision),
     ...recentPool,
-  ])
+  ]).filter((media) => thumbOf(media)) // a hero must have something to show
   const featured = pool.length ? (pool[dailyIndex(Math.min(pool.length, 12))] ?? pool[0]) : null
+  const featuredPool = pool.slice(0, FEATURED_POOL_SIZE)
   if (featured) used.add(featured.id)
+
+  // Collections covers, from the same recent pull — mosaic of photos, newest
+  // video's poster, newest flyer. Never grey: an empty list falls to type.
+  const newestVideo = recentPool.find((media) => media.type === 'video' && thumbOf(media))
+  const collections = {
+    photos: recentPool
+      .filter((media) => media.type === 'photo' && thumbOf(media))
+      .slice(0, 4)
+      .map((media) => thumbOf(media) as string),
+    video: newestVideo ? thumbOf(newestVideo) : null,
+    artifact,
+  }
 
   // 2. On this day — a real month+day match, de-duped against Featured.
   const onThisDay = onThisDayPool.filter((media) => !used.has(media.id)).slice(0, 12)
@@ -85,10 +133,12 @@ export async function getHomeData(db: DB): Promise<HomeData> {
 
   return {
     featured,
+    featuredPool,
     onThisDay: onThisDayFinal,
     comingUp: planned,
     jumpBack: jumpBackFinal,
     recentlyAdded: recentlyAddedFinal,
     hasMedia: recentPool.length > 0,
+    collections,
   }
 }

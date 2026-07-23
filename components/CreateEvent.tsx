@@ -10,9 +10,9 @@ import { CaptureDateFields, type CaptureDateValue } from '@/components/CaptureDa
  * date editor — when. A completed event requires a date; a plan's date is
  * optional ("sometime this summer"). The flyer is the artwork you made.
  */
-export function CreateEvent() {
+export function CreateEvent({ defaultOpen = false }: { defaultOpen?: boolean }) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const [status, setStatus] = useState<'planned' | 'completed'>('planned')
   const [name, setName] = useState('')
   const [capture, setCapture] = useState<CaptureDateValue>({ precision: 'day', takenAt: null })
