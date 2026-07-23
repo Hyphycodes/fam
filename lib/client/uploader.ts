@@ -71,6 +71,7 @@ export interface UploadContext {
 }
 
 const MAX_CONCURRENT = 2
+const MAX_PROCESSING_CHECKS = 4
 
 /**
  * Cloudflare wants >= 5 MiB, a multiple of 256 KiB, <= 200 MiB, and recommends
@@ -106,6 +107,8 @@ export class UploadQueue {
   private listeners = new Set<(items: UploadItem[]) => void>()
   private running = 0
   private aborters = new Map<string, () => void>()
+  private processingRunning = 0
+  private processingQueue: { item: UploadItem; mediaId: string }[] = []
 
   subscribe(listener: (items: UploadItem[]) => void): () => void {
     this.listeners.add(listener)
@@ -147,7 +150,15 @@ export class UploadQueue {
   }
 
   retry(id: string) {
-    this.patch(id, { status: 'queued', progress: 0, error: undefined })
+    const item = this.items.find((entry) => entry.id === id)
+    const restartProcessedVideo =
+      item?.kind === 'video' && item.status === 'error' && item.progress >= 1
+    this.patch(id, {
+      status: 'queued',
+      progress: 0,
+      error: undefined,
+      ...(restartProcessedVideo ? { mediaId: undefined, uploadUrl: undefined } : {}),
+    })
     this.pump()
   }
 
@@ -193,6 +204,33 @@ export class UploadQueue {
     }
   }
 
+  private queueProcessing(item: UploadItem, mediaId: string) {
+    this.processingQueue.push({ item, mediaId })
+    this.pumpProcessing()
+  }
+
+  private pumpProcessing() {
+    while (
+      this.processingRunning < MAX_PROCESSING_CHECKS &&
+      this.processingQueue.length > 0
+    ) {
+      const next = this.processingQueue.shift()
+      if (!next) return
+      this.processingRunning += 1
+      void this.waitForProcessing(next.item, next.mediaId)
+        .catch((error) => {
+          this.patch(next.item.id, {
+            status: 'error',
+            error: error instanceof Error ? error.message : 'That video could not be processed.',
+          })
+        })
+        .finally(() => {
+          this.processingRunning -= 1
+          this.pumpProcessing()
+        })
+    }
+  }
+
   /**
    * Applies the batch's shared caption/tags/event, the moment a row exists —
    * not once bytes finish, so it's set even if someone closes the tab mid
@@ -216,11 +254,15 @@ export class UploadQueue {
     if (Object.keys(patch).length === 0) return
 
     try {
-      await fetch(`/api/media/${mediaId}`, {
+      const response = await fetch(`/api/media/${mediaId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload.error || `Metadata update failed (${response.status}).`)
+      }
     } catch (error) {
       console.error('[reel] could not apply upload details', { mediaId, error })
     }
@@ -276,7 +318,7 @@ export class UploadQueue {
     const { mediaId, put } = response
 
     this.patch(item.id, { mediaId, status: 'uploading' })
-    void this.applyDetails(mediaId, item)
+    const detailsPromise = this.applyDetails(mediaId, item)
 
     // The original goes up untouched — that's what "download original" hands back.
     const parts: [string, Blob, string][] = [
@@ -287,44 +329,12 @@ export class UploadQueue {
 
     let done = 0
     for (const [url, blob, contentType] of parts) {
-      let response: Response
-      try {
-        // Content-Type is part of the signature: send anything else and R2
-        // answers 403 SignatureDoesNotMatch.
-        response = await fetch(url, {
-          method: 'PUT',
-          body: blob,
-          headers: { 'Content-Type': contentType },
-        })
-      } catch (networkError) {
-        // A rejected PUT — not a bad status, an actual thrown error. This used
-        // to be hardcoded to "it's probably CORS", which was a guess, not a
-        // diagnosis — and it kept showing that same guess even after CORS was
-        // fixed, hiding whatever the real, still-live cause was. Show the
-        // browser's own error text instead: it's the one piece of this whole
-        // pipeline that's actually visible without server log access.
-        const detail =
-          networkError instanceof Error
-            ? `${networkError.name}: ${networkError.message}`
-            : String(networkError)
-        console.error('[reel] photo PUT rejected before getting a response', {
-          key: url.split('?')[0],
-          contentType,
-          error: networkError,
-        })
-        throw new Error(`Photos could not reach cloud storage (${detail}). Try again in a moment.`)
-      }
-      if (!response.ok) {
-        throw new Error(
-          response.status === 403
-            ? 'The upload link expired before this finished. Try again.'
-            : `The photo did not upload (${response.status}).`,
-        )
-      }
+      await putPhotoPart(url, blob, contentType)
       done += 1
       this.patch(item.id, { progress: done / parts.length })
     }
 
+    await detailsPromise
     await postJson(`/api/media/${mediaId}/ready`, {
       linkToken: item.context.linkToken ?? null,
     })
@@ -361,7 +371,7 @@ export class UploadQueue {
     }
 
     this.patch(item.id, { mediaId, uploadUrl, status: 'uploading' })
-    void this.applyDetails(mediaId, item)
+    const detailsPromise = this.applyDetails(mediaId, item)
 
     await new Promise<void>((resolve, reject) => {
       const upload = new tus.Upload(item.file, {
@@ -380,9 +390,13 @@ export class UploadQueue {
       upload.start()
     })
 
+    await detailsPromise
     // Bytes are in; Cloudflare still has to transcode it for every screen.
     this.patch(item.id, { status: 'processing', progress: 1 })
-    await this.waitForProcessing(item, mediaId)
+    // Transcoding can take minutes and must not occupy one of the two transfer
+    // slots. A separate bounded monitor updates the row while the next upload
+    // starts immediately.
+    this.queueProcessing(item, mediaId)
   }
 
   private async waitForProcessing(item: UploadItem, mediaId: string) {
@@ -428,6 +442,53 @@ export class UploadQueue {
     // picks it up whenever Cloudflare finishes.
     this.patch(item.id, { status: 'processing' })
   }
+}
+
+async function putPhotoPart(url: string, blob: Blob, contentType: string): Promise<void> {
+  const retryable = new Set([408, 425, 429])
+  let lastNetworkError: unknown
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      // Content-Type is part of the signature: send anything else and R2
+      // answers 403 SignatureDoesNotMatch.
+      const response = await fetch(url, {
+        method: 'PUT',
+        body: blob,
+        headers: { 'Content-Type': contentType },
+      })
+      if (response.ok) return
+      if (response.status === 403) {
+        throw new Error('The upload link expired before this finished. Try again.')
+      }
+      if (!(retryable.has(response.status) || response.status >= 500) || attempt === 2) {
+        throw new Error(`The photo did not upload (${response.status}).`)
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.startsWith('The upload link expired') ||
+          error.message.startsWith('The photo did not upload'))
+      ) {
+        throw error
+      }
+      lastNetworkError = error
+      if (attempt === 2) break
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 750 * 2 ** attempt))
+  }
+
+  const detail =
+    lastNetworkError instanceof Error
+      ? `${lastNetworkError.name}: ${lastNetworkError.message}`
+      : String(lastNetworkError)
+  console.error('[reel] photo PUT rejected before getting a response', {
+    key: url.split('?')[0],
+    contentType,
+    error: lastNetworkError,
+  })
+  throw new Error(`Photos could not reach cloud storage (${detail}). Try again in a moment.`)
 }
 
 function friendlyTusError(error: unknown): string {

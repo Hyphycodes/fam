@@ -46,10 +46,12 @@ export function PhotoCropEditor({
   )
 
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = previous
+      previouslyFocused?.focus()
     }
   }, [])
 
@@ -66,6 +68,17 @@ export function PhotoCropEditor({
         role="dialog"
         aria-modal="true"
         aria-label={`Crop ${filename}`}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && !saving) {
+            event.preventDefault()
+            event.stopPropagation()
+            onCancel()
+          }
+          if (event.key === 'Tab') {
+            event.stopPropagation()
+            trapFocus(event, event.currentTarget)
+          }
+        }}
         className="flex min-h-0 w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-edge bg-ink-raised sm:max-h-[90vh]"
       >
         <header className="flex items-center justify-between border-b border-edge px-4 py-3 sm:px-5">
@@ -73,7 +86,7 @@ export function PhotoCropEditor({
             <h2 className="font-semibold">Crop photo</h2>
             <p className="truncate text-xs text-paper-faint">{filename}</p>
           </div>
-          <button type="button" onClick={onCancel} className="text-sm text-paper-dim hover:text-paper">
+          <button type="button" onClick={onCancel} autoFocus className="text-sm text-paper-dim hover:text-paper">
             Cancel
           </button>
         </header>
@@ -202,4 +215,26 @@ function Range({
       />
     </label>
   )
+}
+
+function trapFocus(
+  event: React.KeyboardEvent<HTMLElement>,
+  container: HTMLElement,
+) {
+  const focusable = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => element.getClientRects().length > 0)
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (!first || !last) return
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
 }

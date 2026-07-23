@@ -39,10 +39,43 @@ export async function POST(request: Request) {
     if (contentHash) {
       const { data: existing } = await uploader.db
         .from('media')
-        .select('id')
+        .select('id, status, uploader_id, uploader_member, upload_link_id, stream_uid')
         .eq('content_hash', contentHash)
         .maybeSingle()
-      if (existing) return ok({ mediaId: existing.id, duplicate: true })
+      if (existing) {
+        const mine =
+          uploader.kind === 'link'
+            ? existing.upload_link_id === uploader.linkId
+            : uploader.uploaderMember
+              ? existing.uploader_member === uploader.uploaderMember
+              : existing.uploader_id === uploader.uploaderId
+
+        if (existing.status !== 'error' || !mine) {
+          return ok({ mediaId: existing.id, duplicate: true })
+        }
+
+        // A Stream encode failure cannot be resumed against the completed tus
+        // resource. Remove this uploader's failed row and create a fresh direct
+        // upload while keeping ready or someone else's media untouched.
+        const { error: removeError } = await uploader.db
+          .from('media')
+          .delete()
+          .eq('id', existing.id)
+        if (removeError) {
+          return fail(`Could not restart that video: ${removeError.message}`, 500)
+        }
+        if (existing.stream_uid) {
+          try {
+            await deleteVideo(existing.stream_uid)
+          } catch (cleanupError) {
+            console.error(
+              '[reel:upload/video] could not remove failed Stream upload',
+              existing.stream_uid,
+              cleanupError,
+            )
+          }
+        }
+      }
     }
 
     const filename = (body.filename ?? 'video').slice(0, 200)

@@ -82,7 +82,7 @@ export function Lightbox({
       className="fixed inset-0 z-[100] flex flex-col bg-ink/97 backdrop-blur-sm animate-fade"
       role="dialog"
       aria-modal="true"
-      aria-label={media.caption || 'Memory'}
+      aria-label={media.caption || (media.type === 'video' ? 'Video viewer' : 'Photo viewer')}
       onTouchStart={(event) => {
         touchStartX.current = event.touches[0]?.clientX ?? null
       }}

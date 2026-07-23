@@ -38,7 +38,7 @@ export function DownloadButton({
     try {
       const response = await fetch(url)
       const blob = await response.blob()
-      const file = new File([blob], filename || 'memory', { type: mimeType || blob.type })
+      const file = new File([blob], filename || 'download', { type: mimeType || blob.type })
       if (!navigator.canShare({ files: [file] })) throw new Error('canShare declined this file')
       await navigator.share({ files: [file] })
       return

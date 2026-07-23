@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { EventPicker } from '@/components/EventPicker'
 import { PersonTagPicker, type TagChip } from '@/components/PersonTagPicker'
 import { PhotoCropEditor } from '@/components/PhotoCropEditor'
-import { classify, type Kind } from '@/lib/client/media-prep'
+import { classify, isSupportedMedia, type Kind } from '@/lib/client/media-prep'
 import type { UploadContext, UploadDraft, UploadDetails } from '@/lib/client/uploader'
 import type { CropMetadata, EventRow } from '@/lib/types'
 
@@ -30,7 +30,9 @@ export function UploadDetailsSheet({
   onCancel: () => void
   onConfirm: (drafts: UploadDraft[], context: UploadContext) => void
 }) {
-  const [items, setItems] = useState<DraftItem[]>(() => makeDrafts(initialFiles))
+  const [items, setItems] = useState<DraftItem[]>(() =>
+    makeDrafts(initialFiles.filter(isSupportedMedia)),
+  )
   const [filter, setFilter] = useState<Filter>('all')
   const [events, setEvents] = useState<EventRow[]>([])
   const [eventId, setEventId] = useState(context?.eventId ?? '')
@@ -44,10 +46,14 @@ export function UploadDetailsSheet({
   const [cropId, setCropId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [duplicateCount, setDuplicateCount] = useState(0)
+  const [unsupportedCount, setUnsupportedCount] = useState(
+    () => initialFiles.filter((file) => !isSupportedMedia(file)).length,
+  )
   const [hashing, setHashing] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const addInput = useRef<HTMLInputElement>(null)
   const submitted = useRef(false)
+  const hashingCancelled = useRef(false)
   const latestItems = useRef(items)
   const durationRequests = useRef(new Set<string>())
 
@@ -56,10 +62,12 @@ export function UploadDetailsSheet({
   }, [items])
 
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = previous
+      previouslyFocused?.focus()
     }
   }, [])
 
@@ -114,7 +122,12 @@ export function UploadDetailsSheet({
     const signatures = new Set(items.map((item) => signature(item.file)))
     const fresh: File[] = []
     let skipped = 0
+    let unsupported = 0
     for (const file of files) {
+      if (!isSupportedMedia(file)) {
+        unsupported += 1
+        continue
+      }
       const key = signature(file)
       if (signatures.has(key)) {
         skipped += 1
@@ -124,12 +137,21 @@ export function UploadDetailsSheet({
       fresh.push(file)
     }
     if (skipped) setDuplicateCount((count) => count + skipped)
+    if (unsupported) setUnsupportedCount((count) => count + unsupported)
     if (fresh.length) setItems((current) => [...current, ...makeDrafts(fresh)])
   }
 
   function close() {
     for (const item of items) URL.revokeObjectURL(item.previewUrl)
     onCancel()
+  }
+
+  function removeSelected() {
+    const ids = new Set(selected.map((item) => item.id))
+    for (const item of selected) URL.revokeObjectURL(item.previewUrl)
+    if (previewId && ids.has(previewId)) setPreviewId(null)
+    if (cropId && ids.has(cropId)) setCropId(null)
+    setItems((current) => current.filter((item) => !ids.has(item.id)))
   }
 
   async function createAlbum() {
@@ -158,12 +180,13 @@ export function UploadDetailsSheet({
   async function submit() {
     if (selected.length === 0 || hashing) return
     setError(null)
+    hashingCancelled.current = false
     setHashing({ done: 0, total: selected.length })
     try {
       const drafts: UploadDraft[] = []
       for (let index = 0; index < selected.length; index += 1) {
         const item = selected[index]
-        const contentHash = await hashFile(item.file)
+        const contentHash = await hashFile(item.file, () => hashingCancelled.current)
         drafts.push({
           file: item.file,
           previewUrl: item.previewUrl,
@@ -187,7 +210,9 @@ export function UploadDetailsSheet({
       }
       onConfirm(drafts, { ...(context ?? {}), eventId: eventId || context?.eventId || null, details })
     } catch (hashError) {
-      setError(hashError instanceof Error ? hashError.message : 'Could not prepare this batch.')
+      if (!(hashError instanceof DOMException && hashError.name === 'AbortError')) {
+        setError(hashError instanceof Error ? hashError.message : 'Could not prepare this batch.')
+      }
       setHashing(null)
     }
   }
@@ -198,6 +223,15 @@ export function UploadDetailsSheet({
       role="dialog"
       aria-modal="true"
       aria-label="Review selected photos and videos"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && !hashing) {
+          event.preventDefault()
+          if (cropId) setCropId(null)
+          else if (previewId) setPreviewId(null)
+          else close()
+        }
+        if (event.key === 'Tab') trapFocus(event, event.currentTarget)
+      }}
     >
       <input
         ref={addInput}
@@ -219,7 +253,7 @@ export function UploadDetailsSheet({
               {items.length} items · {formatBytes(items.reduce((sum, item) => sum + item.file.size, 0))}
             </p>
           </div>
-          <button type="button" onClick={close} className="text-sm text-paper-dim hover:text-paper">Cancel</button>
+          <button type="button" onClick={close} autoFocus className="text-sm text-paper-dim hover:text-paper">Cancel</button>
         </header>
 
         <div
@@ -241,6 +275,11 @@ export function UploadDetailsSheet({
 
         {duplicateCount > 0 && (
           <p className="mt-3 text-xs text-paper-dim">{duplicateCount} repeated {duplicateCount === 1 ? 'file was' : 'files were'} skipped.</p>
+        )}
+        {unsupportedCount > 0 && (
+          <p className="mt-2 text-xs text-paper-dim">
+            {unsupportedCount} unsupported {unsupportedCount === 1 ? 'file was' : 'files were'} skipped.
+          </p>
         )}
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
@@ -265,6 +304,14 @@ export function UploadDetailsSheet({
               const ids = new Set(visible.map((item) => item.id))
               setItems((current) => current.map((item) => ids.has(item.id) ? { ...item, selected: false } : item))
             }} className="hover:text-paper">Deselect</button>
+            <button
+              type="button"
+              onClick={removeSelected}
+              disabled={selected.length === 0}
+              className="text-paper-faint hover:text-paper disabled:pointer-events-none disabled:opacity-40"
+            >
+              Remove selected
+            </button>
           </div>
         </div>
 
@@ -351,8 +398,24 @@ export function UploadDetailsSheet({
       </div>
 
       {preview && (
-        <div className="fixed inset-0 z-[85] grid place-items-center bg-black/95 p-4" role="dialog" aria-modal="true" aria-label={preview.file.name}>
-          <button type="button" onClick={() => setPreviewId(null)} className="absolute top-5 right-5 text-sm text-white/70 hover:text-white">Close</button>
+        <div
+          className="fixed inset-0 z-[85] grid place-items-center bg-black/95 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={preview.file.name}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              event.stopPropagation()
+              setPreviewId(null)
+            }
+            if (event.key === 'Tab') {
+              event.stopPropagation()
+              trapFocus(event, event.currentTarget)
+            }
+          }}
+        >
+          <button type="button" onClick={() => setPreviewId(null)} autoFocus className="absolute top-5 right-5 text-sm text-white/70 hover:text-white">Close</button>
           {preview.kind === 'photo' ? <img src={preview.previewUrl} alt={preview.file.name} className="max-h-[85vh] max-w-full object-contain" /> : <video src={preview.previewUrl} controls autoPlay className="max-h-[85vh] max-w-full" />}
         </div>
       )}
@@ -378,6 +441,15 @@ export function UploadDetailsSheet({
             <div className="mt-4 h-1 overflow-hidden rounded-full bg-edge">
               <div className="h-full bg-white transition-[width]" style={{ width: `${Math.max(3, hashing.done / hashing.total * 100)}%` }} />
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                hashingCancelled.current = true
+              }}
+              className="btn btn-ghost mt-5"
+            >
+              Stop checking
+            </button>
           </div>
         </div>
       )}
@@ -399,17 +471,25 @@ function signature(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}:${file.type}`
 }
 
-async function hashFile(file: File): Promise<string> {
+async function hashFile(file: File, isCancelled: () => boolean): Promise<string> {
   const { createSHA256 } = await import('hash-wasm')
   const hasher = await createSHA256()
   hasher.init()
   const reader = file.stream().getReader()
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    hasher.update(value)
+  try {
+    while (true) {
+      if (isCancelled()) {
+        await reader.cancel()
+        throw new DOMException('Hashing cancelled.', 'AbortError')
+      }
+      const { value, done } = await reader.read()
+      if (done) break
+      hasher.update(value)
+    }
+    return hasher.digest('hex')
+  } finally {
+    reader.releaseLock()
   }
-  return hasher.digest('hex')
 }
 
 function readVideoDuration(url: string): Promise<number | null> {
@@ -437,4 +517,26 @@ function formatBytes(bytes: number): string {
 function formatDuration(seconds: number): string {
   const rounded = Math.max(0, Math.round(seconds))
   return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, '0')}`
+}
+
+function trapFocus(
+  event: React.KeyboardEvent<HTMLElement>,
+  container: HTMLElement,
+) {
+  const focusable = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => element.getClientRects().length > 0)
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (!first || !last) return
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
 }

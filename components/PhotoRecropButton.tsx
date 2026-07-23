@@ -8,14 +8,12 @@ import type { CropMetadata } from '@/lib/types'
 
 export function PhotoRecropButton({
   mediaId,
-  sourceUrl,
   originalUrl,
   filename,
   mimeType,
   initial,
 }: {
   mediaId: string
-  sourceUrl: string
   originalUrl: string
   filename: string
   mimeType?: string | null
@@ -23,10 +21,16 @@ export function PhotoRecropButton({
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function save(crop: CropMetadata) {
     setError(null)
+    // Unmount the full-resolution preview before decoding the original into a
+    // bitmap. Keeping both decodes alive at once is unnecessary on large phone
+    // photos and can create a sharp memory spike.
+    setOpen(false)
+    setSaving(true)
     try {
       const original = await fetch(originalUrl)
       if (!original.ok) throw new Error('Could not load the original photo.')
@@ -77,22 +81,32 @@ export function PhotoRecropButton({
       } finally {
         URL.revokeObjectURL(prepared.previewUrl)
       }
-      setOpen(false)
       router.refresh()
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save the crop.')
+      setOpen(true)
+    } finally {
+      setSaving(false)
     }
   }
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="rounded-full border border-edge px-3.5 py-2 text-sm text-paper-dim transition-colors hover:bg-ink-hover hover:text-paper">
-        Edit crop
+      <button
+        type="button"
+        onClick={() => {
+          setError(null)
+          setOpen(true)
+        }}
+        disabled={saving}
+        className="rounded-full border border-edge px-3.5 py-2 text-sm text-paper-dim transition-colors hover:bg-ink-hover hover:text-paper disabled:opacity-50"
+      >
+        {saving ? 'Saving crop…' : 'Edit crop'}
       </button>
-      {error && <p role="alert" className="mt-2 text-xs text-paper-soft">{error}</p>}
+      {error && !open && <p role="alert" className="mt-2 text-xs text-paper-soft">{error}</p>}
       {open && (
         <PhotoCropEditor
-          src={sourceUrl}
+          src={originalUrl}
           filename={filename}
           initial={initial}
           error={error}

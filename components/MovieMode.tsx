@@ -320,7 +320,7 @@ function Frame({
           autoplay
           controls={false}
           className="h-full w-full object-cover"
-          title={media.caption ?? 'Memory'}
+          title={media.caption ?? 'Video'}
         />
       ) : media.display_url ? (
         <img

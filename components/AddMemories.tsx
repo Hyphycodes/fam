@@ -137,6 +137,7 @@ function UploadTray() {
   const done = items.filter((i) => i.status === 'ready').length
   const failed = items.filter((i) => i.status === 'error').length
   const duplicates = items.filter((i) => i.status === 'duplicate').length
+  const finished = done + failed + duplicates
   const photos = items.filter((i) => i.kind === 'photo' && i.status === 'ready').length
   const videos = items.filter((i) => i.kind === 'video' && i.status === 'ready').length
   const overall = items.length
@@ -150,7 +151,7 @@ function UploadTray() {
         className="pointer-events-auto w-full max-w-md overflow-hidden rounded-2xl border border-edge bg-ink-raised/95 shadow-2xl backdrop-blur-xl animate-rise"
         role="status"
         aria-live="polite"
-        aria-label={busy ? `Uploading items, ${done} of ${items.length} complete` : 'Upload finished'}
+        aria-label={busy ? `Uploading items, ${finished} of ${items.length} complete` : 'Upload finished'}
       >
         <div className="flex items-center justify-between px-5 pt-4 pb-3">
           <div>
@@ -164,7 +165,7 @@ function UploadTray() {
           </p>
           </div>
           {busy ? (
-            <span className="text-sm text-paper-dim">{done}/{items.length}</span>
+            <span className="text-sm text-paper-dim">{finished}/{items.length}</span>
           ) : (
             <button
               onClick={() => queue.clearFinished({ includeErrors: true })}

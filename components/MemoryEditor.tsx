@@ -34,10 +34,12 @@ export function MemoryEditor({
   const [location, setLocation] = useState(media.location_text ?? '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function save() {
     setSaving(true)
     setSaved(false)
+    setError(null)
     try {
       const response = await fetch(`/api/media/${media.id}`, {
         method: 'PATCH',
@@ -51,10 +53,12 @@ export function MemoryEditor({
           people: people.map((p) => p.name),
         }),
       })
-      if (response.ok) {
-        setSaved(true)
-        router.refresh()
-      }
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || 'Could not save those details.')
+      setSaved(true)
+      router.refresh()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save those details.')
     } finally {
       setSaving(false)
     }
@@ -69,18 +73,31 @@ export function MemoryEditor({
   async function toggleFavorite() {
     const next = !favorite
     setFavorite(next)
-    await fetch(`/api/media/${media.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ favorite: next }),
-    })
-    router.refresh()
+    setError(null)
+    try {
+      const response = await fetch(`/api/media/${media.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorite: next }),
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(payload.error || 'Could not update the favorite.')
+      router.refresh()
+    } catch (favoriteError) {
+      setFavorite(!next)
+      setError(
+        favoriteError instanceof Error
+          ? favoriteError.message
+          : 'Could not update the favorite.',
+      )
+    }
   }
 
   return (
     <section>
       <div className="flex flex-wrap items-center gap-2">
         <button
+          type="button"
           onClick={toggleFavorite}
           className={`rounded-full border px-3.5 py-2 text-sm transition-colors ${
             favorite
@@ -94,7 +111,6 @@ export function MemoryEditor({
         {media.type === 'photo' && media.display_url && media.download_url && canDelete && (
           <PhotoRecropButton
             mediaId={media.id}
-            sourceUrl={media.display_url}
             originalUrl={media.download_url}
             filename={media.original_filename ?? 'photo'}
             mimeType={media.mime_type}
@@ -103,6 +119,7 @@ export function MemoryEditor({
         )}
 
         <button
+          type="button"
           onClick={() => setOpen((value) => !value)}
           className="rounded-full border border-edge px-3.5 py-2 text-sm text-paper-dim transition-colors hover:bg-ink-hover"
         >
@@ -154,11 +171,12 @@ export function MemoryEditor({
           </div>
 
           <div className="flex flex-wrap items-center gap-3 pt-1">
-            <button onClick={save} disabled={saving} className="btn btn-primary">
+            <button type="button" onClick={save} disabled={saving} className="btn btn-primary">
               {saving ? 'Saving…' : saved ? 'Saved' : 'Save'}
             </button>
             {canDelete && (
               <button
+                type="button"
                 onClick={remove}
                 className="text-sm text-paper-faint transition-colors hover:text-paper"
               >
@@ -166,8 +184,10 @@ export function MemoryEditor({
               </button>
             )}
           </div>
+          {error && <p role="alert" className="text-sm text-paper-soft">{error}</p>}
         </div>
       )}
+      {!open && error && <p role="alert" className="mt-3 text-sm text-paper-soft">{error}</p>}
     </section>
   )
 }

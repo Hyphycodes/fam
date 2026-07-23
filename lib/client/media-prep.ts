@@ -13,6 +13,7 @@ import type { CropMetadata } from '@/lib/types'
  */
 
 const VIDEO_EXTENSIONS = /\.(mov|mp4|m4v|avi|mkv|webm|3gp|3g2|mts|m2ts|mpg|mpeg|wmv|flv|qt)$/i
+const PHOTO_EXTENSIONS = /\.(jpe?g|png|gif|webp|avif|heic|heif|tiff?|bmp)$/i
 const HEIC_EXTENSIONS = /\.(heic|heif)$/i
 
 export type Kind = 'photo' | 'video'
@@ -22,6 +23,15 @@ export function classify(file: File): Kind {
   if (file.type.startsWith('image/')) return 'photo'
   // Old camcorder files and some Android exports arrive with an empty MIME type.
   return VIDEO_EXTENSIONS.test(file.name) ? 'video' : 'photo'
+}
+
+export function isSupportedMedia(file: File): boolean {
+  return (
+    file.type.startsWith('image/') ||
+    file.type.startsWith('video/') ||
+    PHOTO_EXTENSIONS.test(file.name) ||
+    VIDEO_EXTENSIONS.test(file.name)
+  )
 }
 
 export function isHeic(file: Blob & { name?: string }): boolean {
@@ -90,13 +100,26 @@ function normalizeCrop(crop?: CropMetadata | null): CropMetadata {
   }
 }
 
-/** Draws a crop into a derivative. The source bitmap is never altered. */
-async function encode(
+interface CropSource {
+  image: CanvasImageSource
+  backingCanvas?: HTMLCanvasElement
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/**
+ * Rotates the decoded photo once and describes the selected source rectangle.
+ *
+ * Display and thumbnail encoding share this canvas. Previously each derivative
+ * created its own full-resolution rotated canvas in parallel, which could
+ * briefly hold several copies of a large phone photo in memory.
+ */
+function createCropSource(
   bitmap: ImageBitmap,
-  maxEdge: number,
-  quality: number,
   cropInput?: CropMetadata | null,
-): Promise<{ blob: Blob; width: number; height: number }> {
+): CropSource {
   const crop = normalizeCrop(cropInput)
   const quarterTurn = crop.rotation === 90 || crop.rotation === 270
   const rotatedWidth = quarterTurn ? bitmap.height : bitmap.width
@@ -112,12 +135,15 @@ async function encode(
 
   const travelX = Math.max(0, rotatedWidth - cropWidth)
   const travelY = Math.max(0, rotatedHeight - cropHeight)
-  const sourceX = travelX * ((crop.x + 1) / 2)
-  const sourceY = travelY * ((crop.y + 1) / 2)
 
-  const scale = Math.min(1, maxEdge / Math.max(cropWidth, cropHeight))
-  const width = Math.max(1, Math.round(cropWidth * scale))
-  const height = Math.max(1, Math.round(cropHeight * scale))
+  const source = {
+    image: bitmap as CanvasImageSource,
+    x: travelX * ((crop.x + 1) / 2),
+    y: travelY * ((crop.y + 1) / 2),
+    width: cropWidth,
+    height: cropHeight,
+  }
+  if (crop.rotation === 0) return source
 
   const rotated = document.createElement('canvas')
   rotated.width = rotatedWidth
@@ -128,26 +154,59 @@ async function encode(
   rotatedContext.rotate((crop.rotation * Math.PI) / 180)
   rotatedContext.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2)
 
+  return {
+    ...source,
+    image: rotated,
+    backingCanvas: rotated,
+  }
+}
+
+/** Draws one web-sized derivative. The source bitmap and original stay intact. */
+async function encode(
+  source: CropSource,
+  maxEdge: number,
+  quality: number,
+): Promise<{ blob: Blob; width: number; height: number }> {
+  const scale = Math.min(1, maxEdge / Math.max(source.width, source.height))
+  const width = Math.max(1, Math.round(source.width * scale))
+  const height = Math.max(1, Math.round(source.height * scale))
+
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('This browser would not give us a canvas to work with.')
-  ctx.drawImage(rotated, sourceX, sourceY, cropWidth, cropHeight, 0, 0, width, height)
+  ctx.drawImage(
+    source.image,
+    source.x,
+    source.y,
+    source.width,
+    source.height,
+    0,
+    0,
+    width,
+    height,
+  )
 
-  const blob = await new Promise<Blob | null>((resolve) => {
-    // WebP is meaningfully smaller; Safari < 14 falls back to JPEG on its own
-    // because toBlob ignores a type it can't encode.
-    canvas.toBlob(resolve, 'image/webp', quality)
-  })
+  try {
+    const blob = await new Promise<Blob | null>((resolve) => {
+      // WebP is meaningfully smaller; Safari < 14 falls back to JPEG on its own
+      // because toBlob ignores a type it can't encode.
+      canvas.toBlob(resolve, 'image/webp', quality)
+    })
 
-  if (blob && blob.type === 'image/webp') return { blob, width, height }
+    if (blob && blob.type === 'image/webp') return { blob, width, height }
 
-  const jpeg = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/jpeg', quality)
-  })
-  if (!jpeg) throw new Error('Could not prepare this photo for the web.')
-  return { blob: jpeg, width, height }
+    const jpeg = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', quality)
+    })
+    if (!jpeg) throw new Error('Could not prepare this photo for the web.')
+    return { blob: jpeg, width, height }
+  } finally {
+    // Explicitly release the output backing store before the next derivative.
+    canvas.width = 1
+    canvas.height = 1
+  }
 }
 
 export interface PreparedPhoto {
@@ -164,11 +223,11 @@ export async function preparePhoto(
   crop?: CropMetadata | null,
 ): Promise<PreparedPhoto> {
   const bitmap = await decode(file)
+  let source: CropSource | null = null
   try {
-    const [display, thumb] = await Promise.all([
-      encode(bitmap, 2560, 0.86, crop),
-      encode(bitmap, 640, 0.72, crop),
-    ])
+    source = createCropSource(bitmap, crop)
+    const display = await encode(source, 2560, 0.86)
+    const thumb = await encode(source, 640, 0.72)
     return {
       display: display.blob,
       thumb: thumb.blob,
@@ -178,6 +237,12 @@ export async function preparePhoto(
       previewUrl: URL.createObjectURL(thumb.blob),
     }
   } finally {
+    if (source) {
+      if (source.backingCanvas) {
+        source.backingCanvas.width = 1
+        source.backingCanvas.height = 1
+      }
+    }
     bitmap.close()
   }
 }
@@ -188,11 +253,11 @@ export async function preparePhotoBlob(
   crop: CropMetadata,
 ): Promise<Pick<PreparedPhoto, 'display' | 'thumb' | 'width' | 'height' | 'previewUrl'>> {
   const bitmap = await decode(blob)
+  let source: CropSource | null = null
   try {
-    const [display, thumb] = await Promise.all([
-      encode(bitmap, 2560, 0.86, crop),
-      encode(bitmap, 640, 0.72, crop),
-    ])
+    source = createCropSource(bitmap, crop)
+    const display = await encode(source, 2560, 0.86)
+    const thumb = await encode(source, 640, 0.72)
     return {
       display: display.blob,
       thumb: thumb.blob,
@@ -201,6 +266,12 @@ export async function preparePhotoBlob(
       previewUrl: URL.createObjectURL(thumb.blob),
     }
   } finally {
+    if (source) {
+      if (source.backingCanvas) {
+        source.backingCanvas.width = 1
+        source.backingCanvas.height = 1
+      }
+    }
     bitmap.close()
   }
 }
