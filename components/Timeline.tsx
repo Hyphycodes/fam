@@ -463,7 +463,7 @@ export function Timeline({
                 </div>
               </div>
 
-              <div className="pr-7">
+              <div className="pr-10 sm:pr-11">
                 {yg.band.length > 0 && (
                   <ApproximateBand label={`${yg.year} · dates approximate`} items={yg.band} />
                 )}
@@ -485,8 +485,10 @@ export function Timeline({
   )
 }
 
-/** A month's content. Only the loose grid is capped — event cards, artifacts,
- *  and soft-dated bands always show in full. */
+/** A month's content. The default view is a browsable rail of big cards —
+ *  event cards and soft-dated bands always show in full; only the loose photo
+ *  rail is capped, and "Show all" trades it for a proper grid rather than an
+ *  endless scroll. */
 function MonthSection({ mg }: { mg: MonthGroup }) {
   const [showAll, setShowAll] = useState(false)
   const overflowing = mg.grid.length > MONTH_CAP
@@ -500,13 +502,17 @@ function MonthSection({ mg }: { mg: MonthGroup }) {
       // the rows below it. The estimate is only the first-paint placeholder.
       style={{ contentVisibility: 'auto', containIntrinsicSize: `auto ${estimateHeight(mg)}px` }}
     >
-      <h3 className="mt-5 mb-3 text-sm font-medium tracking-[0.14em] text-paper-dim uppercase">
+      <h3 className="mt-8 mb-4 text-sm font-medium tracking-[0.14em] text-paper-dim uppercase">
         {MONTHS[mg.month]}
       </h3>
 
-      {mg.events.map((event) => (
-        <EventCard key={event.id} event={event} />
-      ))}
+      {mg.events.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {mg.events.map((event) => (
+            <EventCard key={event.id} event={event} />
+          ))}
+        </div>
+      )}
 
       {mg.artifacts.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
@@ -520,13 +526,16 @@ function MonthSection({ mg }: { mg: MonthGroup }) {
         <ApproximateBand label={`${MONTHS[mg.month]} ${mg.year} · approximate`} items={mg.band} />
       )}
 
-      {grid.length > 0 && (
-        <Grid>
-          {grid.map((item) => (
-            <Tile key={item.id} media={item} />
-          ))}
-        </Grid>
-      )}
+      {grid.length > 0 &&
+        (showAll ? (
+          <Grid>
+            {grid.map((item) => (
+              <Tile key={item.id} media={item} />
+            ))}
+          </Grid>
+        ) : (
+          <PhotoRail items={grid} />
+        ))}
 
       {overflowing && (
         <button
@@ -573,7 +582,7 @@ function Scrubber({
       <div className="relative mx-auto h-full max-w-5xl">
         <nav
           aria-label="Jump to a year"
-          className="hide-scrollbar pointer-events-auto absolute top-1/2 right-1 flex max-h-[68vh] -translate-y-1/2 flex-col gap-px overflow-y-auto rounded-full border border-edge bg-ink/85 px-0.5 py-1.5 backdrop-blur"
+          className="hide-scrollbar pointer-events-auto absolute top-1/2 right-2 flex max-h-[68vh] -translate-y-1/2 flex-col gap-0.5 overflow-y-auto rounded-full border border-edge bg-ink/90 px-1 py-2 shadow-lg shadow-black/30 backdrop-blur"
         >
           {flat
             ? years.map((year) => (
@@ -635,9 +644,8 @@ function YearChip({
 }
 
 function estimateHeight(mg: MonthGroup): number {
-  const tiles = Math.min(mg.grid.length, MONTH_CAP) + mg.band.length
-  const rows = Math.ceil(tiles / 3)
-  return 60 + mg.events.length * 210 + (mg.artifacts.length ? 48 : 0) + rows * 128
+  const hasPhotos = mg.grid.length > 0 || mg.band.length > 0
+  return 60 + mg.events.length * 260 + (mg.artifacts.length ? 48 : 0) + (hasPhotos ? 220 : 0)
 }
 
 /** Up to four thumbnails from a year's already-loaded content — the year
@@ -688,7 +696,21 @@ function YearMosaic({ urls }: { urls: string[] }) {
 }
 
 function Grid({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">{children}</div>
+  return <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">{children}</div>
+}
+
+/** The default browsing surface for a month's loose photos — a horizontal run
+ *  of big cards, scrolled like a Netflix row rather than scanned like a grid. */
+function PhotoRail({ items, approximate }: { items: MediaView[]; approximate?: boolean }) {
+  return (
+    <div className="rail">
+      {items.map((item) => (
+        <div key={item.id} className="w-[60vw] max-w-[15rem] shrink-0 sm:w-[15rem]">
+          <Tile media={item} approximate={approximate} />
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function Tile({ media, approximate }: { media: MediaView; approximate?: boolean }) {
@@ -696,7 +718,7 @@ function Tile({ media, approximate }: { media: MediaView; approximate?: boolean 
   return (
     <Link
       href={approximate ? `/m/${media.id}?edit=date` : `/m/${media.id}`}
-      className="tile group relative block aspect-square overflow-hidden rounded-lg border border-edge bg-ink-high"
+      className="tile group relative block aspect-[4/3] overflow-hidden rounded-xl border border-edge bg-ink-high"
       title={`${media.caption ? `${media.caption} · ` : ''}${formatCapturedAt(media.taken_at, media.taken_precision)}`}
     >
       {image ? (
@@ -756,41 +778,19 @@ function ArtifactChip({ artifact }: { artifact: TimelineArtifact }) {
 /** A year- or month-precision band: soft dates, one tap from the date editor. */
 function ApproximateBand({ label, items }: { label: string; items: MediaView[] }) {
   return (
-    <div className="mt-3 rounded-xl border border-dashed border-edge/80 p-3">
+    <div className="mt-4 rounded-xl border border-dashed border-edge/80 p-3">
       <p className="mb-2 text-xs tracking-[0.14em] text-paper-faint uppercase">{label}</p>
-      <Grid>
-        {items.map((item) => (
-          <Tile key={item.id} media={item} approximate />
-        ))}
-      </Grid>
-    </div>
-  )
-}
-
-/** A peek inside a collapsed event — a short filmstrip of what's in there. */
-function PreviewStrip({ preview }: { preview: string[] }) {
-  return (
-    <div className="grid grid-flow-col auto-cols-fr gap-px border-t border-edge/60">
-      {preview.slice(0, 5).map((url, index) => (
-        <span key={index} className="relative block aspect-square overflow-hidden bg-ink-high">
-          <img
-            src={url}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        </span>
-      ))}
+      <PhotoRail items={items} approximate />
     </div>
   )
 }
 
 /**
- * A completed event, sitting at its date. Collapsed by default: title, when,
- * how many, and a filmstrip of the first few. The whole header is the tap
- * target; expanding reveals the full grid *in place* — no navigation, no scroll
- * jump — and the open/closed choice is remembered for the session.
+ * A completed event, sitting at its date. Collapsed by default: one big cover
+ * card — a real poster, not a text row — with its title, when, and how many
+ * overlaid on the photo. The whole card is the tap target; expanding reveals
+ * the full grid *in place* — no navigation, no scroll jump — and the
+ * open/closed choice is remembered for the session.
  */
 function EventCard({ event }: { event: TimelineEventCard }) {
   const [open, toggle] = useEventOpen(event.id)
@@ -824,36 +824,38 @@ function EventCard({ event }: { event: TimelineEventCard }) {
   const when = fullDate(showDate(event.date))
   const countLabel =
     event.count > 0 ? `${event.count} ${event.count === 1 ? 'memory' : 'memories'}` : 'No memories yet'
+  const cover = event.preview[0] ?? event.cover
 
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-edge bg-ink-raised">
-      <button type="button" onClick={toggle} aria-expanded={open} className="block w-full text-left">
-        <div className="flex items-center gap-3 px-3 py-2.5">
-          <span className="min-w-0 flex-1">
-            <span className={`block truncate ${emoji ? 'text-2xl leading-tight' : 'font-medium text-paper'}`}>
-              {event.name.trim() || 'Untitled event'}
-            </span>
-            <span className="meta-mono mt-0.5 block text-paper-faint">
-              {when} · {countLabel}
-            </span>
-          </span>
+    <div className="overflow-hidden rounded-2xl border border-edge bg-ink-raised">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        className="group relative block aspect-[16/10] w-full text-left sm:aspect-[2/1]"
+      >
+        <EventCover
+          src={cover}
+          name={event.name.trim() || 'Event'}
+          className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+        />
+        <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+        <span
+          aria-hidden="true"
+          className={`absolute top-3 right-3 grid size-8 place-items-center rounded-full bg-black/45 text-white/90 backdrop-blur-sm transition-transform ${open ? 'rotate-180' : ''}`}
+        >
+          ⌄
+        </span>
+        <span className="absolute inset-x-0 bottom-0 p-4">
           <span
-            aria-hidden="true"
-            className={`shrink-0 text-paper-faint transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`block truncate ${emoji ? 'text-3xl leading-tight' : 'text-xl font-semibold tracking-[-0.02em] text-white'}`}
           >
-            ⌄
+            {event.name.trim() || 'Untitled event'}
           </span>
-        </div>
-        {!open &&
-          (event.preview.length > 0 ? (
-            <PreviewStrip preview={event.preview} />
-          ) : (
-            <EventCover
-              src={event.cover}
-              name={event.name.trim() || 'Event'}
-              className="relative block aspect-[3/2] w-full border-t border-edge/60 text-base"
-            />
-          ))}
+          <span className="meta-mono mt-1 block text-white/70">
+            {when} · {countLabel}
+          </span>
+        </span>
       </button>
 
       {open && (

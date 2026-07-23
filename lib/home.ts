@@ -2,7 +2,7 @@ import 'server-only'
 
 import type { DB } from '@/lib/api'
 import { getBoardEvents } from '@/lib/community/events'
-import { getFeed, getOnThisDay, getYears } from '@/lib/queries'
+import { getBrowseCovers, getFeed, getOnThisDay, getYears } from '@/lib/queries'
 import { dailyIndex, formatCapturedAt, fullDate, season } from '@/lib/format'
 import { presignGet } from '@/lib/r2'
 import { isConfigured } from '@/lib/env'
@@ -56,7 +56,7 @@ export interface HomeData {
   featuredPool: FeaturedItem[]
   onThisDay: MediaView[]
   comingUp: BoardEvent[]
-  jumpBack: { year: number; count: number }[]
+  jumpBack: { year: number; count: number; cover: string | null }[]
   recentlyAdded: RecentEntry[]
   hasMedia: boolean
   /** Real covers for the Collections tiles, so none of them renders grey. */
@@ -248,12 +248,20 @@ export async function getHomeData(db: DB): Promise<HomeData> {
   entries.sort((a, b) => b.at - a.at)
   const recentlyAdded = entries.length >= 2 ? entries.slice(0, 12).map((e) => e.entry) : []
 
-  // 4. Jump back in — the two or three densest years.
+  // 4. Jump back in — the two or three densest years, each with a real thumbnail
+  //    so the card previews the year rather than just naming it.
   const jumpBack = [...years]
     .filter((entry) => entry.count > 0)
     .sort((a, b) => b.count - a.count)
     .slice(0, 3)
-  const jumpBackFinal = jumpBack.length >= 2 ? jumpBack : []
+  const yearCovers = jumpBack.length
+    ? await getBrowseCovers(db, { people: [], events: [], years: jumpBack })
+    : { years: new Map() }
+  const jumpBackWithCovers = jumpBack.map((entry) => {
+    const media = yearCovers.years.get(entry.year)
+    return { ...entry, cover: media ? thumbOf(media) : null }
+  })
+  const jumpBackFinal = jumpBackWithCovers.length >= 2 ? jumpBackWithCovers : []
 
   return {
     featured,

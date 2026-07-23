@@ -68,7 +68,7 @@ export default async function HomePage() {
             <Heading id="jump-back" eyebrow="The past" title="Jump back in" href="/timeline" />
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               {home.jumpBack.map((entry) => (
-                <YearCard key={entry.year} year={entry.year} count={entry.count} />
+                <YearCard key={entry.year} year={entry.year} count={entry.count} cover={entry.cover} />
               ))}
             </div>
           </section>
@@ -173,15 +173,28 @@ function PlannedCard({ event }: { event: BoardEvent }) {
   )
 }
 
-function YearCard({ year, count }: { year: number; count: number }) {
+function YearCard({ year, count, cover }: { year: number; count: number; cover: string | null }) {
   return (
     <Link
       href={`/timeline?year=${year}`}
-      className="group relative flex aspect-[4/3] flex-col justify-end overflow-hidden rounded-xl border border-edge bg-ink-raised p-4 transition-colors hover:bg-ink-high"
+      className="tile group relative flex aspect-[4/3] flex-col justify-end overflow-hidden rounded-xl border border-edge bg-ink-raised p-4"
     >
-      <span className="absolute inset-0 bg-[radial-gradient(circle_at_70%_20%,rgba(255,255,255,0.06),transparent_55%)]" />
-      <span className="relative font-display text-4xl tracking-[-0.02em] text-paper">{year}</span>
-      <span className="relative meta-mono mt-1 text-paper-faint">
+      {cover ? (
+        <img
+          src={cover}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+        />
+      ) : (
+        <span className="absolute inset-0 bg-[radial-gradient(circle_at_70%_20%,rgba(255,255,255,0.06),transparent_55%)]" />
+      )}
+      <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
+      <span className="relative font-display text-4xl tracking-[-0.02em] text-white [text-shadow:0_1px_10px_rgba(0,0,0,0.5)]">
+        {year}
+      </span>
+      <span className="relative meta-mono mt-1 text-white/70">
         {count} {count === 1 ? 'memory' : 'memories'}
       </span>
     </Link>
