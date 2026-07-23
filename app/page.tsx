@@ -110,8 +110,8 @@ export default async function HomePage() {
                 cover={videoCover[0]}
               />
               <CollectionCard
-                href="/movie"
-                title="Movies"
+                href="/movie?source=archive&mode=shuffle"
+                title="Family TV"
                 detail="Play the family film"
                 cover={featured ?? shuffle ?? photoCover[0] ?? videoCover[0]}
                 play
@@ -336,8 +336,8 @@ function Billboard({ media, eyebrow }: { media: MediaView; eyebrow: string }) {
             <Link href={`/m/${media.id}`} className="btn btn-primary">
               <PlayGlyph /> {media.type === 'video' ? 'Play memory' : 'View memory'}
             </Link>
-            <Link href="/movie" className="btn btn-ghost backdrop-blur-sm">
-              Movie Mode
+            <Link href="/movie?source=archive&mode=shuffle" className="btn btn-ghost backdrop-blur-sm">
+              Family TV
             </Link>
           </div>
         </div>

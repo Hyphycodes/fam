@@ -121,7 +121,14 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
                   {event.media_count} {event.media_count === 1 ? 'photo' : 'photos'}
                 </span>
               </h2>
-              <AddMemoriesButton variant="hero" context={{ eventId: event.id }} />
+              <div className="flex items-center gap-2">
+                {event.media_count > 0 && (
+                  <Link href={`/movie?source=event&id=${event.id}&mode=full`} className="btn btn-ghost">
+                    ▸ Movie Mode
+                  </Link>
+                )}
+                <AddMemoriesButton variant="hero" context={{ eventId: event.id }} />
+              </div>
             </div>
 
             <Feed

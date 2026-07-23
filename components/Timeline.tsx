@@ -357,9 +357,17 @@ export function Timeline({
         <div className="mt-4">
           {groups.map((yg) => (
             <section key={yg.year} aria-label={String(yg.year)}>
-              <h2 className="sticky top-[84px] z-20 -mx-5 bg-ink/92 px-5 py-2 font-display text-3xl tracking-[-0.02em] text-paper backdrop-blur sm:-mx-6 sm:px-6">
-                {yg.year}
-              </h2>
+              <div className="sticky top-[84px] z-20 -mx-5 flex items-center justify-between gap-3 bg-ink/92 px-5 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+                <h2 className="font-display text-3xl tracking-[-0.02em] text-paper">{yg.year}</h2>
+                {(yg.band.length > 0 || yg.months.some((m) => m.grid.length + m.band.length > 0)) && (
+                  <Link
+                    href={`/movie?source=year&year=${yg.year}&mode=full`}
+                    className="shrink-0 rounded-full border border-edge px-3 py-1 text-xs text-paper-dim transition-colors hover:border-edge-strong hover:text-paper"
+                  >
+                    ▸ Play {yg.year}
+                  </Link>
+                )}
+              </div>
 
               {yg.band.length > 0 && (
                 <ApproximateBand

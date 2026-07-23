@@ -16,10 +16,23 @@ export type Segment =
   | { kind: 'media'; id: string; media: MediaView; ms: number }
   | { kind: 'title'; id: string; title: string; sub?: string; ms: number }
 
+export type MovieMode = 'full' | 'shuffle'
+
 export interface ReelOptions {
   /** Dinner-party mode: longer holds, no title cards, softer music. */
   quiet?: boolean
+  /** Legacy flag — kept so existing callers behave exactly as before. */
   shuffle?: boolean
+  /**
+   * The two shipped modes. `full` is strict chronology (the story in order);
+   * `shuffle` is a seeded random so a refresh resumes the same sequence. When
+   * set, `mode` wins over the legacy `shuffle` flag.
+   */
+  mode?: MovieMode
+  /** Seed for shuffle mode — persist it for the session and pass it here. */
+  seed?: number
+  /** Media shown recently (across sessions) — lightly de-prioritised in shuffle. */
+  recentlyShown?: Set<string>
 }
 
 /** Photos hold long enough to actually look at. */
@@ -33,7 +46,7 @@ const TITLE_MS = 3400
 const MIN_ITEMS_BETWEEN_TITLES = 6
 
 export function buildReel(input: MediaView[], options: ReelOptions = {}): Segment[] {
-  const items = options.shuffle ? shuffle(input) : [...input]
+  const items = orderFor(input, options)
   const segments: Segment[] = []
   let sinceTitle = MIN_ITEMS_BETWEEN_TITLES
   let lastChapter: string | null = null
@@ -80,6 +93,61 @@ export function buildReel(input: MediaView[], options: ReelOptions = {}): Segmen
 /** An event if there is one, otherwise the season it happened in. */
 function chapterOf(media: MediaView): string {
   return media.event_name ?? season(media.taken_at)
+}
+
+/** Source + mode → an ordered list. The one place order is decided. */
+function orderFor(input: MediaView[], options: ReelOptions): MediaView[] {
+  if (options.mode === 'full') return chronological(input)
+  if (options.mode === 'shuffle') return seededShuffle(input, options.seed ?? 1, options.recentlyShown)
+  // Legacy path — exactly the previous behaviour.
+  return options.shuffle ? shuffle(input) : [...input]
+}
+
+/**
+ * Strict chronology. Ties (which is where low-precision year/month items land,
+ * anchored to the same instant) break on created_at so the order is stable
+ * across sessions instead of wobbling every render.
+ */
+function chronological(input: MediaView[]): MediaView[] {
+  return [...input].sort((a, b) => {
+    const ta = Date.parse(a.taken_at)
+    const tb = Date.parse(b.taken_at)
+    if (ta !== tb) return ta - tb
+    return Date.parse(a.created_at) - Date.parse(b.created_at)
+  })
+}
+
+/** A seeded shuffle that lightly floats less-recently-shown items to the front. */
+function seededShuffle(input: MediaView[], seed: number, recentlyShown?: Set<string>): MediaView[] {
+  const fresh: MediaView[] = []
+  const recent: MediaView[] = []
+  for (const media of input) {
+    if (recentlyShown?.has(media.id)) recent.push(media)
+    else fresh.push(media)
+  }
+  const rng = mulberry32(seed)
+  return [...seededFisherYates(fresh, rng), ...seededFisherYates(recent, rng)]
+}
+
+function seededFisherYates<T>(input: T[], rng: () => number): T[] {
+  const items = [...input]
+  for (let i = items.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[items[i], items[j]] = [items[j], items[i]]
+  }
+  return items
+}
+
+/** Small, fast, seedable PRNG — deterministic for a given seed. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a |= 0
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
 }
 
 function shuffle<T>(input: T[]): T[] {

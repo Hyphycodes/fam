@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { buildReel, kenBurns, type Segment } from '@/lib/client/reel'
+import { buildReel, kenBurns, type MovieMode as PlayMode, type Segment } from '@/lib/client/reel'
 import { MusicBed, MUSIC_LEVEL, MUSIC_LEVEL_QUIET } from '@/lib/client/music'
 import { VideoFrame } from '@/components/VideoFrame'
 import { Avatar } from '@/components/Avatar'
@@ -36,15 +36,25 @@ export interface Flavor {
 export function MovieMode({
   flavors,
   initialMedia,
+  autoStart = false,
+  initialMode = 'shuffle',
+  sourceLabel,
 }: {
   flavors: Flavor[]
   initialMedia: MediaView[]
+  /** Deep-link entry (playMovie): skip the start screen and play immediately. */
+  autoStart?: boolean
+  initialMode?: PlayMode
+  sourceLabel?: string
 }) {
   const router = useRouter()
-  const [flavor, setFlavor] = useState<Flavor>({ kind: 'everything', label: 'Everything' })
+  const [flavor, setFlavor] = useState<Flavor>(
+    sourceLabel ? { kind: 'everything', label: sourceLabel } : { kind: 'everything', label: 'Everything' },
+  )
   const [media, setMedia] = useState<MediaView[]>(initialMedia)
+  const [mode, setMode] = useState<PlayMode>(initialMode)
   const [quiet, setQuiet] = useState(false)
-  const [started, setStarted] = useState(false)
+  const [started, setStarted] = useState(autoStart)
   const [playing, setPlaying] = useState(true)
   const [index, setIndex] = useState(0)
   const [previous, setPrevious] = useState<Segment | null>(null)
@@ -57,10 +67,14 @@ export function MovieMode({
   // Lazy initialiser, not a ref: the bed is created once and is never read
   // during render.
   const [music] = useState(() => new MusicBed())
+  // The shuffle seed persists for the session, so a refresh resumes the same
+  // sequence instead of reshuffling. Recency is a cross-session signal.
+  const [seed] = useState(sessionSeed)
+  const [recentlyShown] = useState(readRecentlyShown)
 
   const reel = useMemo(
-    () => buildReel(media, { quiet, shuffle: flavor.kind === 'everything' }),
-    [media, quiet, flavor.kind],
+    () => buildReel(media, { quiet, mode, seed, recentlyShown }),
+    [media, quiet, mode, seed, recentlyShown],
   )
   const segment = reel[index] ?? null
 
@@ -144,6 +158,36 @@ export function MovieMode({
     }
   }, [index, reel])
 
+  // Remember what's been shown so shuffle can float fresher memories forward
+  // next time. Cross-session, capped.
+  useEffect(() => {
+    if (segment?.kind === 'media') recordShown(segment.media.id)
+  }, [segment])
+
+  // Keep the screen awake — this runs plugged into a TV for hours.
+  useEffect(() => {
+    if (!started) return
+    let lock: WakeLockSentinel | null = null
+    let cancelled = false
+    const acquire = async () => {
+      try {
+        lock = (await navigator.wakeLock?.request('screen')) ?? null
+      } catch {
+        // Denied or unsupported — nothing to do; the run just relies on the OS.
+      }
+    }
+    void acquire()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && !cancelled) void acquire()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      document.removeEventListener('visibilitychange', onVisible)
+      void lock?.release().catch(() => {})
+    }
+  }, [started])
+
   // ---------------------------------------------------------------------
   // Chrome that gets out of the way
   // ---------------------------------------------------------------------
@@ -224,6 +268,8 @@ export function MovieMode({
         flavors={flavors}
         flavor={flavor}
         quiet={quiet}
+        mode={mode}
+        onMode={setMode}
         onQuiet={setQuiet}
         onFlavor={choose}
         onStart={start}
@@ -244,7 +290,9 @@ export function MovieMode({
       )}
 
       {previous && <Frame segment={previous} index={index - 1} kind="outgoing" />}
-      {segment && <Frame segment={segment} index={index} kind="incoming" />}
+      {segment && (
+        <Frame segment={segment} index={index} kind="incoming" onFail={() => advance(1)} />
+      )}
 
       <Controls
         visible={showControls}
@@ -252,11 +300,13 @@ export function MovieMode({
         flavor={flavor}
         flavors={flavors}
         quiet={quiet}
+        mode={mode}
         loading={loading}
         onPlayPause={() => setPlaying((p) => !p)}
         onSkip={() => advance(1)}
         onBack={() => advance(-1)}
         onFlavor={choose}
+        onMode={setMode}
         onQuiet={setQuiet}
         onExit={() => {
           if (document.fullscreenElement) void document.exitFullscreen().catch(() => {})
@@ -273,10 +323,12 @@ function Frame({
   segment,
   index,
   kind,
+  onFail,
 }: {
   segment: Segment
   index: number
   kind: 'incoming' | 'outgoing'
+  onFail?: () => void
 }) {
   // The outgoing frame just sits there; the incoming one dissolves over it.
   const style =
@@ -327,6 +379,7 @@ function Frame({
           src={media.display_url}
           alt=""
           className={`h-full w-full object-cover ${kenBurns(index)}`}
+          onError={kind === 'incoming' ? onFail : undefined}
         />
       ) : (
         <div className="h-full w-full bg-black" />
@@ -361,7 +414,9 @@ function StartScreen({
   flavors,
   flavor,
   quiet,
+  mode,
   loading,
+  onMode,
   onQuiet,
   onFlavor,
   onStart,
@@ -371,7 +426,9 @@ function StartScreen({
   flavors: Flavor[]
   flavor: Flavor
   quiet: boolean
+  mode: PlayMode
   loading: boolean
+  onMode: (mode: PlayMode) => void
   onQuiet: (value: boolean) => void
   onFlavor: (flavor: Flavor) => void
   onStart: () => void
@@ -436,6 +493,14 @@ function StartScreen({
           </div>
         </div>
 
+        <div className="mt-8">
+          <p className="mb-3 text-xs tracking-[0.25em] text-paper-faint uppercase">How it plays</p>
+          <ModeToggle mode={mode} onMode={onMode} />
+          <p className="mt-2 text-sm text-paper-faint">
+            {mode === 'full' ? 'In order, oldest to newest — the story.' : 'Shuffled, resuming where you left off.'}
+          </p>
+        </div>
+
         <label className="mt-8 flex w-fit cursor-pointer items-center gap-3 text-sm text-paper-soft">
           <input
             type="checkbox"
@@ -469,11 +534,13 @@ function Controls({
   flavor,
   flavors,
   quiet,
+  mode,
   loading,
   onPlayPause,
   onSkip,
   onBack,
   onFlavor,
+  onMode,
   onQuiet,
   onExit,
 }: {
@@ -482,11 +549,13 @@ function Controls({
   flavor: Flavor
   flavors: Flavor[]
   quiet: boolean
+  mode: PlayMode
   loading: boolean
   onPlayPause: () => void
   onSkip: () => void
   onBack: () => void
   onFlavor: (flavor: Flavor) => void
+  onMode: (mode: PlayMode) => void
   onQuiet: (value: boolean) => void
   onExit: () => void
 }) {
@@ -543,6 +612,10 @@ function Controls({
             ))}
           </div>
 
+          <div className="mt-3 flex items-center justify-between gap-3 px-1">
+            <ModeToggle mode={mode} onMode={onMode} tone="dark" />
+          </div>
+
           <label className="mt-3 flex cursor-pointer items-center gap-2.5 px-1 text-sm text-white/60">
             <input
               type="checkbox"
@@ -576,4 +649,75 @@ function ControlButton({
       {children}
     </button>
   )
+}
+
+/** Full / Shuffle — the two shipped modes. */
+function ModeToggle({
+  mode,
+  onMode,
+  tone = 'light',
+}: {
+  mode: PlayMode
+  onMode: (mode: PlayMode) => void
+  tone?: 'light' | 'dark'
+}) {
+  return (
+    <div className="inline-flex gap-1" role="group" aria-label="Playback mode">
+      {(['full', 'shuffle'] as const).map((value) => {
+        const active = mode === value
+        const base = 'rounded-full px-3.5 py-1.5 text-sm capitalize transition-colors'
+        const cls =
+          tone === 'dark'
+            ? active
+              ? 'bg-white/15 text-white'
+              : 'text-white/60 hover:text-white'
+            : active
+              ? 'border border-white bg-white text-ink'
+              : 'border border-edge-strong text-paper-soft hover:bg-ink-hover hover:text-paper'
+        return (
+          <button key={value} type="button" aria-pressed={active} onClick={() => onMode(value)} className={`${base} ${cls}`}>
+            {value}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Session persistence for shuffle
+// ---------------------------------------------------------------------------
+
+function sessionSeed(): number {
+  if (typeof window === 'undefined') return 1
+  try {
+    const stored = window.sessionStorage.getItem('reel:seed')
+    if (stored) return Number(stored)
+    const seed = Math.floor(Math.random() * 2 ** 31)
+    window.sessionStorage.setItem('reel:seed', String(seed))
+    return seed
+  } catch {
+    return 1
+  }
+}
+
+function readRecentlyShown(): Set<string> {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const stored = window.localStorage.getItem('reel:recent')
+    return new Set(stored ? (JSON.parse(stored) as string[]) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function recordShown(id: string): void {
+  if (typeof window === 'undefined') return
+  try {
+    const list = JSON.parse(window.localStorage.getItem('reel:recent') ?? '[]') as string[]
+    const next = [id, ...list.filter((entry) => entry !== id)].slice(0, 300)
+    window.localStorage.setItem('reel:recent', JSON.stringify(next))
+  } catch {
+    // Recency is a nicety, not a requirement.
+  }
 }

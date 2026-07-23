@@ -111,12 +111,26 @@ export default async function CollectionPage({
       <header className="mt-6 mb-14">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <Link
-            href={kind === 'event' ? '/albums' : '/browse'}
+            href={kind === 'event' ? '/albums' : '/timeline'}
             className="text-sm text-paper-faint transition-colors hover:text-paper"
           >
-            ← {kind === 'event' ? 'Albums' : 'Browse'}
+            ← {kind === 'event' ? 'Albums' : 'Timeline'}
           </Link>
-          {kind === 'event' && <AddMemoriesButton context={{ eventId: id }} />}
+          <div className="flex items-center gap-2">
+            {media.length > 0 && (kind === 'event' || kind === 'year') && (
+              <Link
+                href={
+                  kind === 'event'
+                    ? `/movie?source=${collectionKind === 'album' ? 'album' : 'event'}&id=${id}&mode=full`
+                    : `/movie?source=year&year=${id}&mode=full`
+                }
+                className="btn btn-ghost"
+              >
+                ▸ {kind === 'year' ? `Play ${title}` : 'Movie Mode'}
+              </Link>
+            )}
+            {kind === 'event' && <AddMemoriesButton context={{ eventId: id }} />}
+          </div>
         </div>
         {kind === 'event' && (
           <p className="eyebrow mt-8">{collectionKind === 'event' ? 'Event album' : 'Album'}</p>
