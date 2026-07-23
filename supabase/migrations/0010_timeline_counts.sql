@@ -12,6 +12,7 @@ create or replace function public.timeline_month_counts()
 returns table (year smallint, month smallint, n integer)
 language sql
 stable
+set search_path = ''
 as $$
   select taken_year, taken_month, count(*)::int as n
     from public.media
