@@ -104,6 +104,7 @@ const expectedTables = [
   'members',
   'member_sessions',
   'event_artifacts',
+  'event_soundtracks',
 ]
 const { rows: tables } = await db.query(
   `select table_name from information_schema.tables where table_schema = 'public'`,
@@ -312,8 +313,35 @@ if (tags[0].n === 0) pass('Tags can actually be removed')
 else fail('media_people DELETE is a silent no-op — re-tagging will break')
 
 const { rows: versions } = await db.query(`select public.reel_schema_version() as version`)
-if (versions[0].version === 12) pass('Production readiness can identify schema version 12')
+if (versions[0].version === 13) pass('Production readiness can identify schema version 13')
 else fail(`Unexpected schema version: ${versions[0].version}`)
+
+// ---------------------------------------------------------------------------
+// Event soundtracks (0013)
+// ---------------------------------------------------------------------------
+console.log('\nEvent soundtracks')
+
+await db.exec(`insert into public.events (id, name) values
+  ('50000000-0000-0000-0000-000000000001', 'Party')`)
+await db.exec(`insert into public.event_soundtracks (event_id, provider, external_url, title)
+  values ('50000000-0000-0000-0000-000000000001', 'apple_music',
+          'https://music.apple.com/us/playlist/x/pl.u-abc', 'Summer Jams')`)
+const { rows: st } = await db.query(`select provider, title from public.event_soundtracks`)
+if (st.length === 1 && st[0].provider === 'apple_music') pass('A soundtrack attaches to an event')
+else fail(`Soundtrack insert wrong: ${JSON.stringify(st)}`)
+
+try {
+  await db.exec(`insert into public.event_soundtracks (event_id, provider, external_url)
+    values ('50000000-0000-0000-0000-000000000001', 'soundcloud', 'https://x')`)
+  fail('event_soundtracks accepted an unknown provider')
+} catch {
+  pass('event_soundtracks constrains provider to apple_music/spotify/other')
+}
+
+await db.exec(`delete from public.events where id = '50000000-0000-0000-0000-000000000001'`)
+const { rows: stAfter } = await db.query(`select count(*)::int n from public.event_soundtracks`)
+if (stAfter[0].n === 0) pass('Deleting an event cascades to its soundtrack')
+else fail('Soundtrack was orphaned when the event was deleted')
 
 // ---------------------------------------------------------------------------
 // Event artifacts (0012)

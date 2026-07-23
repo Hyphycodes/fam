@@ -8,11 +8,13 @@ import { Avatar } from '@/components/Avatar'
 import { AddMemoriesButton } from '@/components/AddMemories'
 import { EventLifecycle } from '@/components/EventLifecycle'
 import { Artifacts } from '@/components/Artifacts'
+import { Soundtrack } from '@/components/Soundtrack'
 import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
 import { readDb } from '@/lib/db'
 import { getCollectionById } from '@/lib/community/events'
 import { getArtifacts } from '@/lib/community/artifacts'
+import { getSoundtrack } from '@/lib/community/soundtrack'
 import { getFeed } from '@/lib/queries'
 import { fullDate } from '@/lib/format'
 
@@ -35,9 +37,10 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   if (!event) notFound()
 
   const planned = event.status !== 'completed'
-  const [media, artifacts] = await Promise.all([
+  const [media, artifacts, soundtrack] = await Promise.all([
     planned ? Promise.resolve([]) : getFeed(db, { eventId: id, limit: 12 }),
     getArtifacts(db, id),
+    getSoundtrack(db, id),
   ])
 
   return (
@@ -90,6 +93,10 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
           <EventLifecycle eventId={event.id} status={event.status} canRevert={viewer.role === 'owner'} />
         </div>
       </header>
+
+      <div className="mt-6">
+        <Soundtrack eventId={event.id} soundtrack={soundtrack} canEdit />
+      </div>
 
       <div className="mt-8 space-y-10 border-y border-edge py-8">
         <Reactions collectionId={event.id} />

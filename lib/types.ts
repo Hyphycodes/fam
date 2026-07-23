@@ -105,6 +105,18 @@ export interface EventArtifact {
   created_at: string
 }
 
+export type SoundtrackProvider = 'apple_music' | 'spotify' | 'other'
+
+export interface SoundtrackView {
+  id: string
+  event_id: string
+  provider: SoundtrackProvider
+  external_url: string
+  title: string | null
+  artwork_url: string | null
+  track_count: number | null
+}
+
 /** An artifact with its content resolved for rendering. */
 export interface ArtifactView {
   id: string
