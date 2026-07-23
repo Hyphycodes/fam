@@ -11,6 +11,7 @@ interface Body {
   description?: string | null
   flyerPath?: string | null
   status?: string
+  force?: boolean
 }
 
 /**
@@ -39,8 +40,37 @@ export async function POST(request: Request) {
     // A plan hasn't happened, so it has no event_date yet — only an intent.
     // A directly-completed event keeps its given date.
     const eventDate = status === 'completed' ? normalizeDate(body.eventDate) : null
+    // Something that already happened must carry a date — the DB enforces this
+    // too, but say it plainly here rather than surfacing a constraint error.
+    if (status === 'completed' && !eventDate) {
+      return fail('Something that already happened needs a date.')
+    }
 
     const admin = createAdminClient()
+
+    // Soft guard: a similarly-named event within ±3 days is probably the same
+    // night (the "Water Party" / "Hyphy Water Party" problem). Warn, don't block.
+    const referenceDay = eventDate ?? (startsAt ? startsAt.slice(0, 10) : null)
+    if (!body.force && referenceDay) {
+      const { data: nearby } = await admin
+        .from('events')
+        .select('id, name, event_date, starts_at')
+        .is('merged_into', null)
+      const similar = (nearby ?? []).find((event) => {
+        if (event.name.trim().toLowerCase() === name.toLowerCase()) return withinDays(event, referenceDay)
+        const a = name.toLowerCase()
+        const b = (event.name ?? '').toLowerCase()
+        const overlaps = a.length > 3 && b.length > 3 && (a.includes(b) || b.includes(a))
+        return overlaps && withinDays(event, referenceDay)
+      })
+      if (similar) {
+        return ok({
+          warning: `“${similar.name}” already exists around then — same event?`,
+          similar: { id: similar.id, name: similar.name },
+        })
+      }
+    }
+
     const { data, error } = await admin
       .from('events')
       .insert({
@@ -72,6 +102,14 @@ function normalizeDate(value: string | null | undefined): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null
   const date = new Date(`${trimmed}T00:00:00Z`)
   return Number.isNaN(date.getTime()) ? null : trimmed
+}
+
+/** Is an existing event's date within ±3 days of the reference day (YYYY-MM-DD)? */
+function withinDays(event: { event_date: string | null; starts_at: string | null }, referenceDay: string): boolean {
+  const other = event.event_date ?? (event.starts_at ? event.starts_at.slice(0, 10) : null)
+  if (!other) return false
+  const days = Math.abs(Date.parse(`${other}T00:00:00Z`) - Date.parse(`${referenceDay}T00:00:00Z`)) / 86_400_000
+  return days <= 3
 }
 
 /** A YYYY-MM-DD intended date becomes a noon-UTC timestamp; ISO passes through. */

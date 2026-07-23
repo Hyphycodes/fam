@@ -24,6 +24,7 @@ export async function getBoardEvents(db: DB): Promise<BoardEvent[]> {
     .select('*')
     .eq('kind', 'event')
     .neq('status', 'completed')
+    .is('merged_into', null)
     .order('starts_at', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false })
 
@@ -89,6 +90,7 @@ export async function getBoardEvents(db: DB): Promise<BoardEvent[]> {
         status: event.status,
         starts_at: event.starts_at,
         location: event.location,
+        merged_into: event.merged_into,
       }
     }),
   )
@@ -121,6 +123,7 @@ export async function getCollectionById(db: DB, id: string): Promise<BoardEvent 
     status: event.status,
     starts_at: event.starts_at,
     location: event.location,
+    merged_into: event.merged_into,
   }
 }
 

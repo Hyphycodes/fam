@@ -35,6 +35,8 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
 
   const event = await getCollectionById(db, id)
   if (!event) notFound()
+  // A merged (soft-deleted) event forwards to the survivor.
+  if (event.merged_into) redirect(`/community/${event.merged_into}`)
 
   const planned = event.status !== 'completed'
   const [media, artifacts, soundtrack] = await Promise.all([
@@ -116,7 +118,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
           <section className="mt-10">
             <div className="mb-5 flex items-center justify-between gap-4">
               <h2 className="text-lg font-semibold tracking-[-0.01em]">
-                The album
+                Photos
                 <span className="ml-2 text-sm font-normal text-paper-faint">
                   {event.media_count} {event.media_count === 1 ? 'photo' : 'photos'}
                 </span>
@@ -137,7 +139,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
               query={`event=${event.id}`}
               emptyState={
                 <p className="max-w-md leading-relaxed text-paper-dim">
-                  No photos in this album yet. Add the first with the button above — everyone
+                  No photos here yet. Add the first with the button above — everyone
                   can keep adding to it.
                 </p>
               }

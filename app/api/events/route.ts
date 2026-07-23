@@ -19,24 +19,25 @@ export async function POST(request: Request) {
     const actor = await getActor()
     if (!actor) return fail('Not signed in.', 401)
 
-    const { name, eventDate, kind } = await readJson<{
+    const { name, eventDate } = await readJson<{
       name?: string
       eventDate?: string
-      kind?: 'album' | 'event'
     }>(request)
     const title = (name ?? '').trim()
     if (!title) return fail('Enter a name.')
+    // Filing media into a grouping means it already happened — a completed event,
+    // which needs a date (matches the DB constraint).
     const date = normalizeDate(eventDate)
-    if (eventDate && !date) return fail('Choose a valid date.')
-    const collectionKind = kind === 'event' ? 'event' : 'album'
+    if (!date) return fail('Pick a date for this event.')
 
     const db = actor.db
-    let existingQuery = db.from('events').select('*').limit(100)
-    existingQuery = date
-      ? existingQuery.eq('event_date', date)
-      : existingQuery.is('event_date', null)
-    const { data: possibleMatches, error: matchError } = await existingQuery
-    if (matchError) return fail(`Could not check the albums: ${matchError.message}`, 500)
+    const { data: possibleMatches, error: matchError } = await db
+      .from('events')
+      .select('*')
+      .eq('event_date', date)
+      .is('merged_into', null)
+      .limit(100)
+    if (matchError) return fail(`Could not check existing events: ${matchError.message}`, 500)
 
     const existing = (possibleMatches ?? []).find(
       (event) => event.name.trim().toLocaleLowerCase() === title.toLocaleLowerCase(),
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
       .insert({
         name: title.slice(0, 200),
         event_date: date,
-        kind: collectionKind,
+        status: 'completed',
         created_by: actor.userId,
         created_by_member: actor.memberId,
       })

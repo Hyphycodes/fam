@@ -584,7 +584,7 @@ export function UploadDetailsSheet({
                 </div>
               </div>
               <div>
-                <span className="text-xs text-paper-faint">Album or event</span>
+                <span className="text-xs text-paper-faint">Event</span>
                 <div className="mt-1.5">
                   <EventPicker events={events} value={eventId} onChange={setEventId} />
                 </div>

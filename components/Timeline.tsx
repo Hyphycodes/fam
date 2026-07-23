@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { duration, formatCapturedAt } from '@/lib/format'
+import { EventCover } from '@/components/EventCover'
 import type { MediaView } from '@/lib/types'
 import type { MonthCount, TimelineArtifact, TimelineCursor, TimelineEvent } from '@/lib/timeline'
 
@@ -550,11 +551,11 @@ function AlbumCard({ event }: { event: { id: string; name: string; cover: string
         aria-expanded={open}
         className="flex w-full items-center gap-3 p-2.5 text-left transition-colors hover:bg-ink-hover"
       >
-        <span className="relative size-12 shrink-0 overflow-hidden rounded-lg bg-ink-high">
-          {event.cover && (
-            <img src={event.cover} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
-          )}
-        </span>
+        <EventCover
+          src={event.cover}
+          name={event.name}
+          className="relative size-12 shrink-0 overflow-hidden rounded-lg object-cover text-[10px]"
+        />
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium text-paper">{event.name}</span>
           <span className="meta-mono text-paper-faint">

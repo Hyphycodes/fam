@@ -38,10 +38,11 @@ export default async function CollectionPage({
   if (kind === 'event') {
     const { data } = await db
       .from('events')
-      .select('name, event_date, kind')
+      .select('name, event_date, kind, merged_into')
       .eq('id', id)
       .maybeSingle()
     if (!data) notFound()
+    if (data.merged_into) redirect(`/collection/event/${data.merged_into}`)
     title = data.name
     subtitle = data.event_date ? fullDate(data.event_date) : null
     collectionKind = data.kind
@@ -114,7 +115,7 @@ export default async function CollectionPage({
             href={kind === 'event' ? '/albums' : '/timeline'}
             className="text-sm text-paper-faint transition-colors hover:text-paper"
           >
-            ← {kind === 'event' ? 'Albums' : 'Timeline'}
+            ← {kind === 'event' ? 'Events' : 'Timeline'}
           </Link>
           <div className="flex items-center gap-2">
             {media.length > 0 && (kind === 'event' || kind === 'year') && (
@@ -133,7 +134,7 @@ export default async function CollectionPage({
           </div>
         </div>
         {kind === 'event' && (
-          <p className="eyebrow mt-8">{collectionKind === 'event' ? 'Event album' : 'Album'}</p>
+          <p className="eyebrow mt-8">Event</p>
         )}
         <h1 className="mt-4 text-[clamp(2.25rem,7vw,3.5rem)] font-semibold tracking-[-0.03em] leading-none text-balance">
           {title}

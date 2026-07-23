@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Shell } from '@/components/Shell'
 import { CreateEvent } from '@/components/CreateEvent'
+import { EventCover } from '@/components/EventCover'
 import { Avatar } from '@/components/Avatar'
 import { requireViewer } from '@/lib/viewer'
 import { isConfigured } from '@/lib/env'
@@ -65,11 +66,7 @@ function EventCard({ event }: { event: BoardEvent }) {
   return (
     <Link href={`/community/${event.id}`} className="tile group block">
       <div className="relative aspect-[16/10] w-full overflow-hidden">
-        {image ? (
-          <img src={image} alt="" loading="lazy" decoding="async" />
-        ) : (
-          <span className="block h-full w-full bg-ink-high" />
-        )}
+        <EventCover src={image} name={event.name} className="absolute inset-0 h-full w-full object-cover" />
         <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
         <span className="absolute top-3 left-3 rounded-full bg-white px-2.5 py-1 text-[0.6875rem] font-semibold tracking-wide text-ink uppercase">
           Planned

@@ -138,6 +138,7 @@ export async function getEvents(db: DB): Promise<(EventRow & { media_count: numb
     .from('events')
     .select('*')
     .neq('status', 'planned')
+    .is('merged_into', null)
     .order('event_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
 

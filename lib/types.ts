@@ -67,6 +67,8 @@ export interface EventRow {
   starts_at: string | null
   ends_at: string | null
   location: string | null
+  /** Set when this event was merged into another (soft delete); reads hide it. */
+  merged_into: string | null
 }
 
 /** A board event with everything the feed needs resolved. */
@@ -85,6 +87,7 @@ export interface BoardEvent {
   status: EventStatus
   starts_at: string | null
   location: string | null
+  merged_into: string | null
 }
 
 /** The domain name for the events table. An event is a collection with kind='event'. */

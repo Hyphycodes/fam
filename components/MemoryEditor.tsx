@@ -198,7 +198,7 @@ export function MemoryEditor({
 
           <div>
             <label className="mb-2 block text-xs tracking-[0.2em] text-paper-faint uppercase">
-              Album or event
+              Event
             </label>
             <EventPicker events={events} value={eventId} onChange={setEventId} />
           </div>

@@ -56,6 +56,7 @@ export async function getTimelineEvents(db: DB): Promise<TimelineEvent[]> {
     .select('id, name, event_date, created_at, cover_media_id')
     .eq('kind', 'event')
     .eq('status', 'completed')
+    .is('merged_into', null)
 
   const events = (data ?? []) as {
     id: string

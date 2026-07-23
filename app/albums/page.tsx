@@ -40,13 +40,13 @@ export default async function AlbumsPage() {
   return (
     <Shell viewer={viewer}>
       <header className="mt-8 mb-10 sm:mt-12 sm:mb-14">
-        <p className="eyebrow">Albums &amp; events</p>
+        <p className="eyebrow">Events</p>
         <h1 className="mt-3 max-w-3xl text-[clamp(2.5rem,8vw,4.5rem)] font-semibold leading-none tracking-[-0.035em] text-balance">
           Keep the whole day together
         </h1>
         <p className="mt-4 max-w-2xl text-sm leading-relaxed text-paper-dim">
-          Albums hold the memories. When an album is also an event, it can carry the date, collect
-          family uploads, and appear on the Board.
+          Every gathering is an event — it carries a date, collects everyone&rsquo;s uploads, and
+          takes its place on the Timeline. File loose photos into one below.
         </p>
       </header>
 

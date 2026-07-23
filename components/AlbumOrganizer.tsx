@@ -6,7 +6,8 @@ import { useMemo, useState } from 'react'
 import { latestUploadBatch } from '@/lib/client/albums'
 import { fullDate } from '@/lib/format'
 import { CaptureDateFields, type CaptureDateValue } from '@/components/CaptureDateFields'
-import type { CollectionKind, EventRow } from '@/lib/types'
+import { EventCover } from '@/components/EventCover'
+import type { EventRow } from '@/lib/types'
 
 const ORGANIZER_PAGE_SIZE = 60
 
@@ -39,7 +40,6 @@ export function AlbumOrganizer({
   const [albumId, setAlbumId] = useState(initialAlbums[0]?.id ?? '')
   const [name, setName] = useState('')
   const [date, setDate] = useState('')
-  const [kind, setKind] = useState<CollectionKind>('album')
   const [creating, setCreating] = useState(false)
   const [assigning, setAssigning] = useState(false)
   const [datingOpen, setDatingOpen] = useState(false)
@@ -54,8 +54,6 @@ export function AlbumOrganizer({
   const latestBatch = useMemo(() => latestUploadBatch(unfiled), [unfiled])
   const latestBatchSelected =
     latestBatch.length > 0 && latestBatch.every((memory) => selectedSet.has(memory.id))
-  const albumsOnly = albums.filter((album) => album.kind === 'album')
-  const eventAlbums = albums.filter((album) => album.kind === 'event')
   const pageCount = Math.max(1, Math.ceil(unfiled.length / ORGANIZER_PAGE_SIZE))
   const safePage = Math.min(page, pageCount - 1)
   const visibleUnfiled = unfiled.slice(
@@ -72,7 +70,7 @@ export function AlbumOrganizer({
 
   async function createAlbum() {
     const title = name.trim()
-    if (!title || creating) return
+    if (!title || !date || creating) return
     setCreating(true)
     setError(null)
     setMessage(null)
@@ -80,10 +78,10 @@ export function AlbumOrganizer({
       const response = await fetch('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: title, eventDate: date || null, kind }),
+        body: JSON.stringify({ name: title, eventDate: date }),
       })
       const payload = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(payload.error || 'Could not create that album.')
+      if (!response.ok) throw new Error(payload.error || 'Could not create that event.')
 
       const returned = payload.event as EventRow
       const created =
@@ -102,7 +100,7 @@ export function AlbumOrganizer({
       setDate('')
       setMessage(`${created.name} is ready.`)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not create that album.')
+      setError(caught instanceof Error ? caught.message : 'Could not create that event.')
     } finally {
       setCreating(false)
     }
@@ -124,7 +122,7 @@ export function AlbumOrganizer({
 
       const assignedIds = new Set<string>(payload.mediaIds ?? [])
       const assigned = Number(payload.assigned ?? 0)
-      const albumName = albums.find((album) => album.id === albumId)?.name ?? 'the album'
+      const albumName = albums.find((album) => album.id === albumId)?.name ?? 'the event'
       setUnfiled((current) => current.filter((memory) => !assignedIds.has(memory.id)))
       setAlbums((current) =>
         current.map((album) =>
@@ -183,11 +181,11 @@ export function AlbumOrganizer({
           <div>
             <p className="eyebrow mb-2">The family archive</p>
             <h2 id="album-library" className="text-2xl font-semibold tracking-[-0.02em]">
-              Albums
+              Events
             </h2>
           </div>
           <p className="max-w-md text-sm leading-relaxed text-paper-dim">
-            Every event has an album. Event albums can also appear on the Board.
+            Every gathering is an event. File loose uploads into one below.
           </p>
         </div>
 
@@ -199,19 +197,12 @@ export function AlbumOrganizer({
                 href={`/collection/event/${album.id}`}
                 className="group overflow-hidden rounded-xl border border-edge bg-ink-raised transition-colors hover:bg-ink-high"
               >
-                <div className="relative aspect-[4/3] overflow-hidden bg-ink-high">
-                  {album.cover_url ? (
-                    <img
-                      src={album.cover_url}
-                      alt=""
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-                    />
-                  ) : (
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_45%),linear-gradient(145deg,rgba(255,255,255,0.04),transparent)]" />
-                  )}
-                  <span className="absolute top-2 left-2 rounded-full bg-black/55 px-2 py-1 text-[10px] tracking-[0.14em] text-white/75 uppercase backdrop-blur">
-                    {album.kind === 'event' ? 'Event album' : 'Album'}
-                  </span>
+                <div className="relative aspect-[4/3] overflow-hidden">
+                  <EventCover
+                    src={album.cover_url}
+                    name={album.name}
+                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                  />
                 </div>
                 <div className="p-3.5">
                   <p className="truncate font-display text-xl text-paper">{album.name}</p>
@@ -226,7 +217,7 @@ export function AlbumOrganizer({
           </div>
         ) : (
           <p className="rounded-xl border border-dashed border-edge px-5 py-10 text-paper-dim">
-            No albums yet. Make the first one below.
+            No events yet. Make the first one below.
           </p>
         )}
       </section>
@@ -234,9 +225,9 @@ export function AlbumOrganizer({
       <section className="grid gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <div className="rounded-2xl border border-edge bg-ink-raised p-5 sm:p-6">
           <p className="eyebrow mb-2">New collection</p>
-          <h2 className="text-2xl font-semibold tracking-[-0.02em]">Make an album</h2>
+          <h2 className="text-2xl font-semibold tracking-[-0.02em]">Make an event</h2>
           <p className="mt-2 text-sm leading-relaxed text-paper-dim">
-            Keep it as an album, or make it an event album so it can live on the Board too.
+            Group loose uploads under one name and date — it joins the Timeline.
           </p>
 
           <div className="mt-6 space-y-3">
@@ -245,48 +236,25 @@ export function AlbumOrganizer({
               onChange={(event) => setName(event.target.value)}
               placeholder="Father’s Day 2023"
               className="field"
-              aria-label="Album name"
+              aria-label="Event name"
             />
-            <input
-              type="date"
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-              className="field"
-              aria-label="Album date"
-            />
-            <div className="grid grid-cols-2 gap-2" aria-label="Album visibility">
-              <button
-                type="button"
-                onClick={() => setKind('album')}
-                className={`rounded-xl border px-3 py-3 text-left text-sm transition-colors ${
-                  kind === 'album'
-                    ? 'border-paper/40 bg-white/8 text-paper'
-                    : 'border-edge text-paper-dim hover:bg-ink-high'
-                }`}
-              >
-                <span className="block font-medium">Album</span>
-                <span className="mt-1 block text-xs text-paper-faint">Archive only</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setKind('event')}
-                className={`rounded-xl border px-3 py-3 text-left text-sm transition-colors ${
-                  kind === 'event'
-                    ? 'border-paper/40 bg-white/8 text-paper'
-                    : 'border-edge text-paper-dim hover:bg-ink-high'
-                }`}
-              >
-                <span className="block font-medium">Event album</span>
-                <span className="mt-1 block text-xs text-paper-faint">Can show on Board</span>
-              </button>
-            </div>
+            <label className="block text-xs text-paper-faint">
+              Date
+              <input
+                type="date"
+                value={date}
+                onChange={(event) => setDate(event.target.value)}
+                className="field mt-1 tracking-normal normal-case"
+                aria-label="Event date"
+              />
+            </label>
             <button
               type="button"
               onClick={() => void createAlbum()}
-              disabled={creating || !name.trim()}
+              disabled={creating || !name.trim() || !date}
               className="btn btn-primary w-full"
             >
-              {creating ? 'Creating…' : 'Create album'}
+              {creating ? 'Creating…' : 'Create event'}
             </button>
           </div>
         </div>
@@ -295,7 +263,7 @@ export function AlbumOrganizer({
           <p className="eyebrow mb-2">Organize later</p>
           <h2 className="text-2xl font-semibold tracking-[-0.02em]">File recent uploads</h2>
           <p className="mt-2 text-sm leading-relaxed text-paper-dim">
-            Select a whole batch—like the 45 memories you just added—and place it into one album.
+            Select a whole batch—like the 45 memories you just added—and place it into one event.
           </p>
 
           {unfiled.length > 0 ? (
@@ -435,27 +403,14 @@ export function AlbumOrganizer({
                   value={albumId}
                   onChange={(event) => setAlbumId(event.target.value)}
                   className="field"
-                  aria-label="Destination album"
+                  aria-label="Destination event"
                 >
-                  <option value="">Choose an album</option>
-                  {albumsOnly.length > 0 && (
-                    <optgroup label="Albums">
-                      {albumsOnly.map((album) => (
-                        <option key={album.id} value={album.id}>
-                          {album.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {eventAlbums.length > 0 && (
-                    <optgroup label="Event albums">
-                      {eventAlbums.map((album) => (
-                        <option key={album.id} value={album.id}>
-                          {album.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
+                  <option value="">Choose an event</option>
+                  {albums.map((album) => (
+                    <option key={album.id} value={album.id}>
+                      {album.name}
+                    </option>
+                  ))}
                 </select>
                 <button
                   type="button"
@@ -463,7 +418,7 @@ export function AlbumOrganizer({
                   disabled={assigning || !albumId || selected.length === 0}
                   className="btn btn-primary whitespace-nowrap"
                 >
-                  {assigning ? 'Filing…' : `Add ${selected.length || ''} to album`}
+                  {assigning ? 'Filing…' : `Add ${selected.length || ''} to event`}
                 </button>
               </div>
             </>
@@ -471,7 +426,7 @@ export function AlbumOrganizer({
             <div className="mt-6 rounded-xl border border-dashed border-edge px-5 py-10">
               <p className="text-paper-soft">Everything is filed.</p>
               <p className="mt-1 text-sm text-paper-faint">
-                New uploads without an album will appear here.
+                New uploads without an event will appear here.
               </p>
             </div>
           )}

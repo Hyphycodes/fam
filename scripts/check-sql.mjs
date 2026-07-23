@@ -313,16 +313,50 @@ if (tags[0].n === 0) pass('Tags can actually be removed')
 else fail('media_people DELETE is a silent no-op — re-tagging will break')
 
 const { rows: versions } = await db.query(`select public.reel_schema_version() as version`)
-if (versions[0].version === 13) pass('Production readiness can identify schema version 13')
+if (versions[0].version === 14) pass('Production readiness can identify schema version 14')
 else fail(`Unexpected schema version: ${versions[0].version}`)
+
+// ---------------------------------------------------------------------------
+// One event model (0014)
+// ---------------------------------------------------------------------------
+console.log('\nOne event model')
+
+// A completed event with no date is rejected by the database, not just the form.
+try {
+  await db.exec(`insert into public.events (name, status) values ('Dateless', 'completed')`)
+  fail('A completed event with no date was allowed')
+} catch {
+  pass('The database rejects a completed event with no date')
+}
+
+// A planned event with no date is still fine.
+await db.exec(`insert into public.events (id, name, status) values
+  ('ee000000-0000-0000-0000-000000000009', 'A vague plan', 'planned')`)
+const { rows: vaguePlan } = await db.query(
+  `select status from public.events where id = 'ee000000-0000-0000-0000-000000000009'`,
+)
+if (vaguePlan[0].status === 'planned') pass('A planned event with no date is still allowed')
+else fail('A dateless planned event was rejected')
+
+// kind now defaults to event, and merged_into exists for soft-delete merges.
+await db.exec(`insert into public.events (id, name, event_date) values
+  ('ee000000-0000-0000-0000-00000000000a', 'Defaults', '2021-01-01')`)
+const { rows: defaults } = await db.query(
+  `select kind, merged_into from public.events where id = 'ee000000-0000-0000-0000-00000000000a'`,
+)
+if (defaults[0].kind === 'event' && defaults[0].merged_into === null) {
+  pass('New events default to kind=event with a null merged_into')
+} else {
+  fail(`One-event-model defaults wrong: ${JSON.stringify(defaults[0])}`)
+}
 
 // ---------------------------------------------------------------------------
 // Event soundtracks (0013)
 // ---------------------------------------------------------------------------
 console.log('\nEvent soundtracks')
 
-await db.exec(`insert into public.events (id, name) values
-  ('50000000-0000-0000-0000-000000000001', 'Party')`)
+await db.exec(`insert into public.events (id, name, event_date) values
+  ('50000000-0000-0000-0000-000000000001', 'Party', '2020-05-01')`)
 await db.exec(`insert into public.event_soundtracks (event_id, provider, external_url, title)
   values ('50000000-0000-0000-0000-000000000001', 'apple_music',
           'https://music.apple.com/us/playlist/x/pl.u-abc', 'Summer Jams')`)
@@ -348,8 +382,8 @@ else fail('Soundtrack was orphaned when the event was deleted')
 // ---------------------------------------------------------------------------
 console.log('\nEvent artifacts')
 
-await db.exec(`insert into public.events (id, name) values
-  ('ea000000-0000-0000-0000-000000000001', 'Artifact host')`)
+await db.exec(`insert into public.events (id, name, event_date) values
+  ('ea000000-0000-0000-0000-000000000001', 'Artifact host', '2020-05-01')`)
 await db.exec(`insert into public.event_artifacts (id, event_id, type, url, title) values
   ('af000000-0000-0000-0000-000000000001', 'ea000000-0000-0000-0000-000000000001', 'link',
    'https://maps.example/here', 'Directions')`)
@@ -383,8 +417,8 @@ else fail('event_artifacts were orphaned when the event was deleted')
 // ---------------------------------------------------------------------------
 console.log('\nEvent lifecycle')
 
-await db.exec(`insert into public.events (id, name) values
-  ('e0000000-0000-0000-0000-000000000001', 'Existing cookout')`)
+await db.exec(`insert into public.events (id, name, event_date) values
+  ('e0000000-0000-0000-0000-000000000001', 'Existing cookout', '2020-05-01')`)
 const { rows: eventDefault } = await db.query(
   `select status from public.events where id = 'e0000000-0000-0000-0000-000000000001'`,
 )

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { Shell } from '@/components/Shell'
 import { VideoFrame } from '@/components/VideoFrame'
 import { Rail, MediaTile } from '@/components/Rail'
+import { EventCover } from '@/components/EventCover'
 import { Avatar } from '@/components/Avatar'
 import { AddMemoriesButton } from '@/components/AddMemories'
 import { requireViewer } from '@/lib/viewer'
@@ -88,8 +89,8 @@ export default async function HomePage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <NavTile href="/timeline?type=photo" title="Photos" detail="Every still" />
             <NavTile href="/timeline?type=video" title="Videos" detail="Every clip" />
-            <NavTile href="/albums" title="Albums" detail="Kept together" />
-            <NavTile href="/community" title="Events" detail="Planned & past" />
+            <NavTile href="/albums" title="Events" detail="Every gathering" />
+            <NavTile href="/community" title="Board" detail="What's planned" />
             <NavTile href="/community" title="Artifacts" detail="Flyers & more" />
           </div>
         </section>
@@ -132,11 +133,7 @@ function PlannedCard({ event }: { event: BoardEvent }) {
   return (
     <Link href={`/community/${event.id}`} className="tile group block">
       <div className="relative aspect-[16/10] w-full overflow-hidden">
-        {image ? (
-          <img src={image} alt="" loading="lazy" decoding="async" />
-        ) : (
-          <span className="block h-full w-full bg-ink-high" />
-        )}
+        <EventCover src={image} name={event.name} className="absolute inset-0 h-full w-full object-cover" />
         <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
         <span className="absolute top-3 left-3 rounded-full bg-white px-2.5 py-1 text-[0.6875rem] font-semibold tracking-wide text-ink uppercase">
           Planned
@@ -293,7 +290,7 @@ function FirstTime({ name }: { name: string }) {
         The first memory is waiting, {name}.
       </h1>
       <p className="mt-4 text-[0.9375rem] leading-relaxed text-paper-dim text-balance">
-        Add a few photos or videos, then keep the day together in an album — or plan something on the Board.
+        Add a few photos or videos, then keep the day together in an event — or plan something on the Board.
       </p>
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
         <AddMemoriesButton variant="hero" />

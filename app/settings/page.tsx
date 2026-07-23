@@ -7,6 +7,7 @@ import {
   UploadLinkManager,
 } from '@/components/FamilyManager'
 import { StorageHealth } from '@/components/StorageHealth'
+import { MergeEvents } from '@/components/MergeEvents'
 import { requireViewer } from '@/lib/viewer'
 import { appName, appUrl, isConfigured } from '@/lib/env'
 import { getEvents, getInvites, getMusicTracks, getUploadLinks } from '@/lib/queries'
@@ -40,8 +41,8 @@ export default async function SettingsPage() {
         </h1>
         <p className="mt-5 max-w-xl leading-relaxed text-paper-dim">
           {isOwner
-            ? 'Manage family access, albums, upload links, and Movie Mode audio.'
-            : 'View shared albums, Movie Mode audio, and account details.'}
+            ? 'Manage family access, events, upload links, and Movie Mode audio.'
+            : 'View shared events, Movie Mode audio, and account details.'}
         </p>
       </header>
 
@@ -61,6 +62,7 @@ export default async function SettingsPage() {
         )}
         <SettingsPanel id="events">
           <EventManager initial={events} />
+          {isOwner && <MergeEvents events={events.map((event) => ({ id: event.id, name: event.name }))} />}
         </SettingsPanel>
         {isOwner && (
           <SettingsPanel id="guest-links">
